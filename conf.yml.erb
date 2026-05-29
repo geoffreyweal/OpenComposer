@@ -1,0 +1,43 @@
+---
+# Required settings
+apps_dir: "./apps"
+clusters:
+  mahuika:
+    scheduler: "slurm"
+
+# Optional settings
+# General
+data_dir:  <%= ENV['HOME'] %>/composer
+login_node: "login.hpc.nesi.org.nz"
+ssh_wrapper: "ssh login.hpc.nesi.org.nz"
+bin: "/usr/bin"
+bin_overrides:
+  sbatch:   "/usr/bin/sbatch"
+  scontrol: "/usr/bin/scontrol"
+  scancel:  "/usr/bin/scancel"
+  sacct:    "/usr/bin/sacct"
+#sge_root: "/apps/t4/rhel9/uge/latest"
+
+## History
+history:
+  OC_HISTORY_JOB_NAME:
+  OC_HISTORY_START_TIME:
+    label: "Start Time"
+  OC_HISTORY_END_TIME:
+    label: "End Time"
+
+## Layout
+footer:                  "Copyright &copy; 2026 &middot; REANNZ | <a href='https://www.nesi.org.nz/disclaimer' target='_blank'>Disclaimer</a> | <a href='https://www.nesi.org.nz/about-us/security-privacy/privacy-policy' target='_blank'>Privacy</a>"
+thumbnail_width:         "100"
+highlight_theme:         "vs"
+directive_color:         "#000000"
+navbar_color:            "#2392B2"
+dropdown_color:          "#2392B2"
+footer_color:            "#2392B2"
+category_color:          "#5522BB"
+description_color:       "#000000"
+form_color:              "#BFCFE7"
+non_script_color:        "#FFFFFF"
+non_script_button_color: "#FFBF00"
+submit_color:            "#FFCCCC"
+submit_button_color:     "#FFAAAA"
