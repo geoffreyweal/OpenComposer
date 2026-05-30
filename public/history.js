@@ -226,6 +226,106 @@ document.querySelectorAll('input[name="_historyCluster"]').forEach(radio => {
   });
 });
 
+// Escape HTML special characters for safe DOM insertion.
+ocHistory.escapeHtml = function(text) {
+  const d = document.createElement('div');
+  d.textContent = String(text == null ? '' : text);
+  return d.innerHTML;
+};
+
+// Build HTML table content for Job Details modal from /job_details JSON.
+ocHistory.buildJobDetailsContent = function(data) {
+  if (data.error) {
+    return `<div class="alert alert-warning">${ocHistory.escapeHtml(data.error)}</div>`;
+  }
+
+  const skipKeys   = new Set(['status', 'Job Name', 'Partition']);
+  const skipValues = new Set(['N/A', '(null)', 'None', 'none', '']);
+  const entries    = data.data ? Object.entries(data.data) : [];
+  const rows       = entries.filter(([k, v]) =>
+    !skipKeys.has(k) && v != null && !skipValues.has(String(v))
+  );
+
+  if (rows.length === 0) {
+    return '<p class="text-muted">(No details available for this job.)</p>';
+  }
+
+  let html = '<table class="table table-striped table-sm text-break">';
+  rows.forEach(([k, v]) => {
+    html += `<tr><td>${ocHistory.escapeHtml(k)}</td><td>${ocHistory.escapeHtml(v)}</td></tr>`;
+  });
+  html += '</table>';
+
+  if (data.source && data.source !== 'none') {
+    html += `<p class="text-muted small mt-1 mb-0">Source: ${ocHistory.escapeHtml(data.source)}</p>`;
+  }
+  return html;
+};
+
+// Fetch job details from the server and populate the Job Details modal.
+ocHistory.loadJobDetails = function(modalEl) {
+  const body = modalEl.querySelector('.modal-body[data-job-id]');
+  if (!body || body.dataset.loaded === 'true') return;
+
+  const jobId   = body.dataset.jobId;
+  const cluster = body.dataset.cluster;
+  const base    = window.location.pathname.replace(/\/history$/, '');
+  let url = `${base}/job_details?jobId=${encodeURIComponent(jobId)}`;
+  if (cluster) url += `&cluster=${encodeURIComponent(cluster)}`;
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      body.dataset.loaded = 'true';
+      body.innerHTML = ocHistory.buildJobDetailsContent(data);
+    })
+    .catch(() => {
+      body.dataset.loaded = 'true';
+      body.innerHTML = '<div class="alert alert-warning">Could not load job details.</div>';
+    });
+};
+
+// Fetch batch script via sacct -B and populate the Job Script modal.
+ocHistory.loadJobScript = function(modalEl) {
+  const body = modalEl.querySelector('.modal-body[data-script-job-id]');
+  if (!body || body.dataset.loaded === 'true') return;
+
+  const jobId   = body.dataset.scriptJobId;
+  const cluster = body.dataset.cluster;
+  const base    = window.location.pathname.replace(/\/history$/, '');
+  let url = `${base}/job_details?jobId=${encodeURIComponent(jobId)}`;
+  if (cluster) url += `&cluster=${encodeURIComponent(cluster)}`;
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      body.dataset.loaded = 'true';
+      if (data.script_content) {
+        body.innerHTML = `<pre class="mb-0 p-2" style="white-space: pre-wrap;">${ocHistory.escapeHtml(data.script_content)}</pre>`;
+      } else {
+        body.innerHTML = '<p class="text-muted p-2">(No batch script available for this job.)</p>';
+      }
+    })
+    .catch(() => {
+      body.dataset.loaded = 'true';
+      body.innerHTML = '<div class="alert alert-warning m-2">Could not load batch script.</div>';
+    });
+};
+
+// Attach lazy-load listeners to Job Details modals.
+document.querySelectorAll('[id^="_historyJobId"]').forEach(function(el) {
+  el.addEventListener('show.bs.modal', function() {
+    ocHistory.loadJobDetails(this);
+  });
+});
+
+// Attach lazy-load listeners to Job Script modals (when script content is missing from DB).
+document.querySelectorAll('[id^="_historyJobScript"]').forEach(function(el) {
+  el.addEventListener('show.bs.modal', function() {
+    ocHistory.loadJobScript(this);
+  });
+});
+
 // Handle "Select All" checkbox functionality.
 ocHistory.selectAllCheckbox = document.getElementById('_historySelectAll');
 ocHistory.tbody = document.getElementById('_historyTbody');

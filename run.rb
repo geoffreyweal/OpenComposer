@@ -544,6 +544,60 @@ get "/_file_or_directory" do
   end
 end
 
+get "/job_details" do
+  content_type :json
+
+  job_id = (params["jobId"] || "").strip
+  return { "error" => "No job ID specified" }.to_json if job_id.empty?
+  return { "error" => "Invalid job ID" }.to_json unless job_id.match?(/\A[\d_.\[\]]+\z/)
+
+  conf         = create_conf
+  cluster_name = conf.key?("clusters") ? (params["cluster"] || conf["clusters"].keys.first) : nil
+  scheduler    = conf.key?("clusters") ? create_scheduler(conf)[cluster_name] : create_scheduler(conf)
+  bin          = conf.key?("clusters") ? conf["bin"][cluster_name]          : conf["bin"]
+  bin_overrides= conf.key?("clusters") ? conf["bin_overrides"][cluster_name]: conf["bin_overrides"]
+  ssh_wrapper  = conf.key?("clusters") ? conf["ssh_wrapper"][cluster_name]  : conf["ssh_wrapper"]
+
+  result = {
+    "job_id"          => job_id,
+    "source"          => "none",
+    "data"            => {},
+    "script_location" => nil,
+    "script_name"     => nil,
+    "script_content"  => nil
+  }
+
+  scontrol_data, _err = scheduler.scontrol_job(job_id, bin, bin_overrides, ssh_wrapper)
+
+  if scontrol_data && !scontrol_data.empty?
+    result["source"] = "scontrol"
+    result["data"]   = scontrol_data
+    cmd = scontrol_data["Command"]
+    if cmd && cmd != "(null)" && !cmd.strip.empty?
+      result["script_location"] = File.dirname(cmd)
+      result["script_name"]     = File.basename(cmd)
+    end
+    result["script_location"] ||= scontrol_data["WorkDir"]
+  else
+    sacct_info, _err = scheduler.query([job_id], bin, bin_overrides, ssh_wrapper)
+    if sacct_info && sacct_info[job_id]
+      result["source"] = "sacct"
+      raw = {}
+      sacct_info[job_id].each { |k, v| raw[k.to_s] = v.to_s if v && !v.to_s.strip.empty? }
+      result["data"] = raw
+      workdir = raw["WorkDir"]
+      result["script_location"] = workdir unless workdir.to_s.strip.empty? || workdir == "None"
+    end
+  end
+
+  script_content, _err = scheduler.batch_script(job_id, bin, bin_overrides, ssh_wrapper)
+  result["script_content"] = script_content
+
+  result.to_json
+rescue Exception => e
+  { "error" => e.message }.to_json
+end
+
 get "/*" do
   show_website
 end

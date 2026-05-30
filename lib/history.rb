@@ -86,12 +86,14 @@ helpers do
     HTML
   end
 
-  # Output a modal for displaying details of a specific job.
+  # Output a modal for displaying live job details fetched from scontrol/sacct.
+  # Content is lazy-loaded via AJAX when the modal is opened.
   def output_job_id_modal(job, filter)
-    return if job[JOB_KEYS].nil? # If a job has just been submitted, it may not have been registered yet.
+    modal_id   = "_historyJobId#{job[JOB_ID]}"
+    job_id_esc = escape_html(job[JOB_ID].to_s)
+    cluster_attr = @cluster_name ? " data-cluster=\"#{escape_html(@cluster_name)}\"" : ""
 
-    modal_id = "_historyJobId#{job[JOB_ID]}"
-    html = <<~HTML
+    <<~HTML
     <div class="modal" aria-hidden="true" id="#{modal_id}" tabindex="-1">
       <div class="modal-dialog modal-dialog-scrollable modal-lg">
         <div class="modal-content" style="resize: horizontal; padding-right: 16px;">
@@ -99,17 +101,12 @@ helpers do
             <h5>Job Details</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
-          <div class="modal-body">
-            <table class="table table-striped table-sm text-break">
-    HTML
-
-    filtered_keys = job[JOB_KEYS] - [JOB_NAME, JOB_PARTITION, JOB_STATUS_ID]
-    filtered_keys.each do |key|
-      html += "<tr><td>#{output_text(key, filter)}</td><td>#{output_text(job[key], filter)}</td></tr>\n"
-    end
-
-    html += <<~HTML
-            </table>
+          <div class="modal-body" data-job-id="#{job_id_esc}"#{cluster_attr}>
+            <div class="text-center py-3">
+              <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -118,10 +115,32 @@ helpers do
   end
 
   # Output a modal displaying a job script and a link to load parameters for a specific job.
+  # If the script content is not in the DB, it is lazy-loaded via sacct -B on modal open.
   def output_job_script_modal(job, filter)
-    modal_id = "_historyJobScript#{job[JOB_ID]}"
-    job_link = "#{File.join(@script_name.to_s, job[JOB_DIR_NAME].to_s)}?jobId=#{URI.encode_www_form_component(job[JOB_ID].to_s)}"
-    job_link += "&cluster=#{@cluster_name}" if @cluster_name
+    modal_id    = "_historyJobScript#{job[JOB_ID]}"
+    job_link    = "#{File.join(@script_name.to_s, job[JOB_DIR_NAME].to_s)}?jobId=#{URI.encode_www_form_component(job[JOB_ID].to_s)}"
+    job_link   += "&cluster=#{@cluster_name}" if @cluster_name
+    has_content = !job[OC_SCRIPT_CONTENT].to_s.strip.empty?
+
+    if has_content
+      body_html = <<~HTML
+      <div class="modal-body">
+        #{output_text(job[OC_SCRIPT_CONTENT], filter)}
+      </div>
+      HTML
+    else
+      job_id_esc   = escape_html(job[JOB_ID].to_s)
+      cluster_attr = @cluster_name ? " data-cluster=\"#{escape_html(@cluster_name)}\"" : ""
+      body_html = <<~HTML
+      <div class="modal-body" data-script-job-id="#{job_id_esc}"#{cluster_attr}>
+        <div class="text-center py-3">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      </div>
+      HTML
+    end
 
     <<~HTML
     <div class="modal" aria-hidden="true" id="#{modal_id}" tabindex="-1">
@@ -131,9 +150,7 @@ helpers do
             <h5>Job Script</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
-          <div class="modal-body">
-            #{output_text(job[OC_SCRIPT_CONTENT], filter)}
-          </div>
+          #{body_html}
           <div class="modal-footer">
             <a href="#{job_link}" class="btn btn-primary text-white text-decoration-none">Load parameters</a>
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" tabindex="-1">Close</button>
@@ -1065,8 +1082,11 @@ helpers do
         existing = job_record_to_internal_hash(record)
         scheduler_data = (info || {}).transform_keys(&:to_s)
         scheduler_data["_status"] = scheduler_data[JOB_STATUS_ID.to_s]
-        scheduler_data["_script_location"] = scheduler_data[HEADER_SCRIPT_LOCATION.to_s]
-        scheduler_data["_script_name"] = scheduler_data[HEADER_SCRIPT_NAME.to_s]
+        # Backfill _script_location from sacct WorkDir when missing from the DB record
+        if existing["_script_location"].to_s.strip.empty?
+          workdir = scheduler_data["WorkDir"]
+          scheduler_data["_script_location"] = workdir unless workdir.to_s.strip.empty? || workdir == "None"
+        end
         scheduler_data[JOB_KEYS.to_s] = info.keys
 
         upsert_job(

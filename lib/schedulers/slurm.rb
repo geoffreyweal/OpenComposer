@@ -133,4 +133,43 @@ class Slurm < Scheduler
   rescue Exception => e
     return nil, e.message
   end
+
+  # Run scontrol show job for one job ID and parse the key=value output.
+  # Returns [hash, nil] on success, [nil, nil] when the job is not found,
+  # or [nil, error_message] on failure.
+  def scontrol_job(job_id, bin = nil, bin_overrides = nil, ssh_wrapper = nil)
+    scontrol = get_command_path("scontrol", bin, bin_overrides)
+    command = [ssh_wrapper, scontrol, "show job", job_id].compact.join(" ")
+    stdout, stderr, status = Open3.capture3(command)
+    return nil, nil unless status.success?
+
+    parsed = {}
+    stdout.split.each do |token|
+      idx = token.index('=')
+      next unless idx && idx > 0
+      key = token[0...idx]
+      value = token[idx + 1..]
+      parsed[key] = value unless key.empty?
+    end
+    parsed.empty? ? [nil, nil] : [parsed, nil]
+  rescue Exception => e
+    return nil, e.message
+  end
+
+  # Fetch the batch script for a job via sacct --batch-script (-B).
+  # Returns [script_content, nil] or [nil, nil] when not available.
+  def batch_script(job_id, bin = nil, bin_overrides = nil, ssh_wrapper = nil)
+    sacct = get_command_path("sacct", bin, bin_overrides)
+    command = [ssh_wrapper, sacct, "-j", job_id, "-B"].compact.join(" ")
+    stdout, stderr, status = Open3.capture3(command)
+    return nil, nil unless status.success?
+
+    lines = stdout.lines
+    return nil, nil unless lines.size >= 2 && lines[0].start_with?("Batch Script for")
+
+    content = lines.drop(2).join
+    content.strip.empty? ? [nil, nil] : [content, nil]
+  rescue Exception => e
+    return nil, e.message
+  end
 end
