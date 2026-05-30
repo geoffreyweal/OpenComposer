@@ -265,7 +265,11 @@ ocHistory.buildJobDetailsContent = function(data) {
   html += '</table>';
 
   if (data.source && data.source !== 'none') {
-    html += `<p class="text-muted small mt-1 mb-0">Source: ${ocHistory.escapeHtml(data.source)}</p>`;
+    if (data.command) {
+      html += `<details class="mt-2"><summary class="text-muted small" style="cursor:pointer">Source: ${ocHistory.escapeHtml(data.source)}</summary><pre class="small text-muted mt-1 p-1 mb-0" style="white-space:pre-wrap;word-break:break-all">${ocHistory.escapeHtml(data.command)}</pre></details>`;
+    } else {
+      html += `<p class="text-muted small mt-1 mb-0">Source: ${ocHistory.escapeHtml(data.source)}</p>`;
+    }
   }
   return html;
 };

@@ -567,11 +567,12 @@ get "/job_details" do
     "script_content"  => nil
   }
 
-  scontrol_data, scontrol_err = scheduler.scontrol_job(job_id, bin, bin_overrides, ssh_wrapper)
+  scontrol_data, scontrol_err, scontrol_cmd = scheduler.scontrol_job(job_id, bin, bin_overrides, ssh_wrapper)
 
   if scontrol_data && !scontrol_data.empty?
-    result["source"] = "scontrol"
-    result["data"]   = scontrol_data
+    result["source"]  = "scontrol"
+    result["command"] = scontrol_cmd
+    result["data"]    = scontrol_data
     cmd = scontrol_data["Command"]
     if cmd && cmd != "(null)" && !cmd.strip.empty?
       result["script_location"] = File.dirname(cmd)
@@ -579,10 +580,11 @@ get "/job_details" do
     end
     result["script_location"] ||= scontrol_data["WorkDir"]
   else
-    sacct_data, sacct_err = scheduler.sacct_job(job_id, bin, bin_overrides, ssh_wrapper)
+    sacct_data, sacct_err, sacct_cmd = scheduler.sacct_job(job_id, bin, bin_overrides, ssh_wrapper)
     if sacct_data && !sacct_data.empty?
-      result["source"] = "sacct"
-      result["data"]   = sacct_data
+      result["source"]  = "sacct"
+      result["command"] = sacct_cmd
+      result["data"]    = sacct_data
       workdir = sacct_data["WorkDir"]
       result["script_location"] = workdir unless workdir.to_s.strip.empty? || workdir == "None"
     else
