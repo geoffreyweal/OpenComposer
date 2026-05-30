@@ -156,6 +156,36 @@ class Slurm < Scheduler
     return nil, e.message
   end
 
+  # Fetch key fields for a single job from sacct for the Job Details modal.
+  # Returns [hash, nil] on success or [nil, error_message] on failure.
+  def sacct_job(job_id, bin = nil, bin_overrides = nil, ssh_wrapper = nil)
+    sacct  = get_command_path("sacct", bin, bin_overrides)
+    fields = %w[JobID JobName Partition Account State Submit Start End Elapsed WorkDir NodeList AllocCPUS AllocTRES ReqMem MaxRSS ExitCode Comment]
+    command = [ssh_wrapper, sacct, "-j", job_id, "--format=#{fields.join(',')}", "--parsable2"].compact.join(" ")
+    stdout, stderr, status = Open3.capture3(command)
+    return nil, [stdout, stderr].join(" ").strip unless status.success?
+
+    lines = stdout.lines.map(&:chomp)
+    return nil, nil if lines.size < 2
+
+    header = lines[0].split('|')
+    data_row = lines[1..].find { |l|
+      id = l.split('|').first.to_s
+      !id.end_with?(".batch", ".extern") && !id.strip.empty?
+    }
+    return nil, nil unless data_row
+
+    result = {}
+    data_row.split('|').each_with_index do |value, idx|
+      key = header[idx]
+      next unless key && !value.strip.empty?
+      result[key] = value
+    end
+    result.empty? ? [nil, nil] : [result, nil]
+  rescue Exception => e
+    return nil, e.message
+  end
+
   # Fetch the batch script for a job via sacct --batch-script (-B).
   # Returns [script_content, nil] or [nil, nil] when not available.
   def batch_script(job_id, bin = nil, bin_overrides = nil, ssh_wrapper = nil)

@@ -247,7 +247,15 @@ ocHistory.buildJobDetailsContent = function(data) {
   );
 
   if (rows.length === 0) {
-    return '<p class="text-muted">(No details available for this job.)</p>';
+    let html = '<p class="text-muted">(No details available for this job.)</p>';
+    if (data.errors && Object.keys(data.errors).length > 0) {
+      html += '<details class="mt-2"><summary class="text-muted small">Error details</summary>';
+      Object.entries(data.errors).forEach(([src, msg]) => {
+        html += `<p class="text-muted small mb-0"><strong>${ocHistory.escapeHtml(src)}:</strong> ${ocHistory.escapeHtml(msg)}</p>`;
+      });
+      html += '</details>';
+    }
+    return html;
   }
 
   let html = '<table class="table table-striped table-sm text-break">';

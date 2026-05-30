@@ -43,6 +43,12 @@ class Scheduler
     [nil, nil]
   end
 
+  # Fetch key fields for a single job from sacct for the Job Details modal.
+  # @return [Array<Hash, String>] [parsed_hash_or_nil, error_message_or_nil]
+  def sacct_job(job_id, bin = nil, bin_overrides = nil, ssh_wrapper = nil)
+    [nil, nil]
+  end
+
   # Fetch the batch script submitted for a job.
   # Override in subclasses that support this (e.g. Slurm via sacct -B).
   # @return [Array<String, String>] [script_content_or_nil, error_message_or_nil]

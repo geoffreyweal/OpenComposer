@@ -567,7 +567,7 @@ get "/job_details" do
     "script_content"  => nil
   }
 
-  scontrol_data, _err = scheduler.scontrol_job(job_id, bin, bin_overrides, ssh_wrapper)
+  scontrol_data, scontrol_err = scheduler.scontrol_job(job_id, bin, bin_overrides, ssh_wrapper)
 
   if scontrol_data && !scontrol_data.empty?
     result["source"] = "scontrol"
@@ -579,14 +579,15 @@ get "/job_details" do
     end
     result["script_location"] ||= scontrol_data["WorkDir"]
   else
-    sacct_info, _err = scheduler.query([job_id], bin, bin_overrides, ssh_wrapper)
-    if sacct_info && sacct_info[job_id]
+    sacct_data, sacct_err = scheduler.sacct_job(job_id, bin, bin_overrides, ssh_wrapper)
+    if sacct_data && !sacct_data.empty?
       result["source"] = "sacct"
-      raw = {}
-      sacct_info[job_id].each { |k, v| raw[k.to_s] = v.to_s if v && !v.to_s.strip.empty? }
-      result["data"] = raw
-      workdir = raw["WorkDir"]
+      result["data"]   = sacct_data
+      workdir = sacct_data["WorkDir"]
       result["script_location"] = workdir unless workdir.to_s.strip.empty? || workdir == "None"
+    else
+      errors = { "scontrol" => scontrol_err, "sacct" => sacct_err }.compact
+      result["errors"] = errors unless errors.empty?
     end
   end
 
