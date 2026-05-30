@@ -257,7 +257,6 @@ helpers do
       "rows" => @rows,
       "p" => @current_page,
       "cluster" => @cluster_name,
-      "source_mode" => @source_mode
     }
 
     overrides.each do |key, value|
@@ -281,8 +280,6 @@ helpers do
     query_params << ["rows", values["rows"]] if values["rows"] && values["rows"].to_i != HISTORY_ROWS
     query_params << ["p", values["p"]] if values["p"] && values["p"].to_i != 1
     query_params << ["cluster", values["cluster"]] if values["cluster"]
-    query_params << ["source_mode", values["source_mode"]] if values["source_mode"] && values["source_mode"] != "db"
-
     query_params.empty? ? "./history" : "./history?#{URI.encode_www_form(query_params)}"
   end
 
@@ -822,36 +819,28 @@ helpers do
 
   # Return searchable History table columns in display order.
   def history_filter_column_items(conf)
-    items = [
-      ["all", "(ALL)"],
-      [JOB_ID, "Job ID / Job Details"],
-      [JOB_APP_NAME, "Application"],
+    [
+      ["all",                  "(ALL)"],
+      [JOB_ID,                 "Job ID / Job Details"],
+      [JOB_APP_NAME,           "Application"],
       [HEADER_SCRIPT_LOCATION, "Script Location"],
-      [HEADER_SCRIPT_NAME, "Script Name / Job Script"]
+      [HEADER_SCRIPT_NAME,     "Script Name / Job Script"],
+      [JOB_NAME,               "Job Name"]
     ]
-
-    history_config_items(conf).each do |key, label|
-      items << [HISTORY_KEY_MAP.fetch(key, key), label]
-    end
-
-    items
   end
 
   # Return sortable History table columns in display order.
   def history_sort_column_items(conf)
-    items = [
-      [JOB_ID, "Job ID"],
-      [JOB_APP_NAME, "Application"],
+    [
+      [JOB_ID,                 "Job ID"],
+      [JOB_APP_NAME,           "Application"],
       [HEADER_SCRIPT_LOCATION, "Script Location"],
-      [HEADER_SCRIPT_NAME, "Script Name"],
-      [JOB_STATUS_ID, "Status"]
+      [HEADER_SCRIPT_NAME,     "Script Name"],
+      [JOB_NAME,               "Job Name"],
+      ["Start",                "Start Time"],
+      ["End",                  "End Time"],
+      [JOB_STATUS_ID,          "Status"]
     ]
-
-    history_config_items(conf).each do |key, label|
-      items << [HISTORY_KEY_MAP.fetch(key, key), label]
-    end
-
-    items
   end
 
   # Return the selected history filter column if valid.
@@ -1204,11 +1193,6 @@ helpers do
     history_filter_hits_text?(job[OC_SCRIPT_CONTENT], filter)
   end
 
-  # Return "sacct" or "db" (default).
-  def parse_history_source_mode(raw)
-    raw.to_s == "sacct" ? "sacct" : "db"
-  end
-
   # Map a sacct State string to an OpenComposer status constant.
   def sacct_state_to_oc_status(state)
     s = state.to_s
@@ -1229,20 +1213,122 @@ helpers do
     end
   end
 
-  # Filter an array of sacct job hashes by status and text.
-  def filter_sacct_jobs(jobs, statuses, filter, filter_mode)
-    return [] if jobs.nil?
+  # Build one row for the combined history table.
+  # sacct_job and db_job may each be nil when a job comes from only one source.
+  def build_combined_row(job_id, sacct_job, db_job)
+    app_name = if db_job && !db_job[JOB_APP_NAME].to_s.strip.empty?
+                 db_job[JOB_APP_NAME]
+               else
+                 "Generic"
+               end
 
+    script_loc = db_job&.fetch(HEADER_SCRIPT_LOCATION, nil)
+    script_loc = sacct_job&.fetch("WorkDir", nil) if script_loc.to_s.strip.empty?
+
+    start_time = sacct_job&.fetch("Start", nil)
+    start_time = nil if start_time.to_s == "Unknown" || start_time.to_s.empty?
+    start_time ||= db_job&.fetch("Start", nil)
+
+    end_time = sacct_job&.fetch("End", nil)
+    end_time = nil if end_time.to_s == "Unknown" || end_time.to_s.empty?
+    end_time ||= db_job&.fetch("End", nil)
+
+    oc_status = if sacct_job
+                  sacct_state_to_oc_status(sacct_job["State"].to_s)
+                else
+                  db_job&.fetch(JOB_STATUS_ID, nil)
+                end
+
+    job_name = sacct_job&.fetch("JobName", nil)
+    job_name = nil if job_name.to_s.strip.empty?
+    job_name ||= db_job&.fetch(JOB_NAME, nil) || db_job&.fetch(HEADER_JOB_NAME, nil)
+
+    {
+      JOB_ID               => job_id,
+      JOB_APP_NAME         => app_name,
+      JOB_DIR_NAME         => db_job&.fetch(JOB_DIR_NAME, nil),
+      HEADER_SCRIPT_LOCATION => script_loc,
+      HEADER_SCRIPT_NAME   => db_job&.fetch(HEADER_SCRIPT_NAME, nil),
+      JOB_NAME             => job_name,
+      "Start"              => start_time,
+      "End"                => end_time,
+      JOB_STATUS_ID        => oc_status,
+      OC_SCRIPT_CONTENT    => db_job&.fetch(OC_SCRIPT_CONTENT, nil),
+      "_has_db"            => !db_job.nil?
+    }
+  end
+
+  # Return a sort key for the combined history table.
+  def combined_sort_key(job, sort)
+    case sort
+    when JOB_APP_NAME
+      [job[JOB_APP_NAME].to_s.downcase, *history_job_id_sort_key(job[JOB_ID])]
+    when HEADER_SCRIPT_LOCATION
+      [job[HEADER_SCRIPT_LOCATION].to_s.downcase, *history_job_id_sort_key(job[JOB_ID])]
+    when HEADER_SCRIPT_NAME
+      [job[HEADER_SCRIPT_NAME].to_s.downcase, *history_job_id_sort_key(job[JOB_ID])]
+    when JOB_NAME
+      [job[JOB_NAME].to_s.downcase, *history_job_id_sort_key(job[JOB_ID])]
+    when "Start"
+      [job["Start"].to_s, *history_job_id_sort_key(job[JOB_ID])]
+    when "End"
+      [job["End"].to_s, *history_job_id_sort_key(job[JOB_ID])]
+    when JOB_STATUS_ID
+      order = { JOB_STATUS["queued"] => 0, JOB_STATUS["running"] => 1,
+                JOB_STATUS["completed"] => 2, JOB_STATUS["failed"] => 3 }
+      [order.fetch(job[JOB_STATUS_ID], 99), *history_job_id_sort_key(job[JOB_ID])]
+    else  # JOB_ID (default)
+      history_job_id_sort_key(job[JOB_ID])
+    end
+  end
+
+  # Return all combined jobs matching filters (no pagination).
+  def get_combined_jobs(conf, cluster_name, sacct_jobs, statuses, filter, filter_column, filter_mode, date_from, date_to)
+    sacct_map = {}
+    (sacct_jobs || []).each { |j| sacct_map[j["JobID"]] = j }
+
+    db = open_history_db(conf, cluster_name)
+    db_map = {}
+    each_job(db) do |row|
+      next unless history_date_range_matches?(row["_submission_time"], date_from, date_to)
+      legacy = { JOB_ID => row["_job_id"] }.merge(job_record_to_legacy_hash(row))
+      db_map[row["_job_id"]] = legacy
+    end
+
+    all_ids = (sacct_map.keys + db_map.keys).uniq
     selected_statuses = Array(statuses).map(&:to_s)
     filter_text = CGI.unescapeHTML(filter.to_s).downcase
 
-    jobs.select do |job|
-      oc_status = sacct_state_to_oc_status(job["State"].to_s)
-      next false unless selected_statuses.any? { |s| oc_status == JOB_STATUS[s] }
-      next true if filter_text.empty?
+    all_ids.filter_map do |job_id|
+      row = build_combined_row(job_id, sacct_map[job_id], db_map[job_id])
 
-      search_text = job.values.compact.map(&:to_s).join(" ").downcase
-      history_filter_mode_matches?(search_text, filter_text, filter_mode)
+      next unless selected_statuses.any? { |s| row[JOB_STATUS_ID] == JOB_STATUS[s] }
+
+      unless filter_text.empty?
+        search_text = case filter_column
+                      when JOB_APP_NAME         then row[JOB_APP_NAME].to_s
+                      when HEADER_SCRIPT_LOCATION then row[HEADER_SCRIPT_LOCATION].to_s
+                      when HEADER_SCRIPT_NAME    then row[HEADER_SCRIPT_NAME].to_s
+                      when JOB_NAME              then row[JOB_NAME].to_s
+                      when JOB_ID
+                        "#{row[JOB_ID]} #{row[JOB_NAME]} #{row[JOB_APP_NAME]}"
+                      else
+                        [row[JOB_ID], row[JOB_APP_NAME], row[HEADER_SCRIPT_LOCATION],
+                         row[HEADER_SCRIPT_NAME], row[JOB_NAME]].compact.join(" ")
+                      end.downcase
+        next unless history_filter_mode_matches?(search_text, filter_text, filter_mode)
+      end
+
+      row
     end
+  end
+
+  # Return one page of combined jobs and the total matching count.
+  def get_combined_jobs_page(conf, cluster_name, sacct_jobs, statuses, filter, filter_column, filter_mode, date_from, date_to, sort, order, limit, offset)
+    all_jobs = get_combined_jobs(conf, cluster_name, sacct_jobs, statuses, filter, filter_column, filter_mode, date_from, date_to)
+    all_jobs.sort_by! { |job| combined_sort_key(job, sort) }
+    all_jobs.reverse! if order == "desc"
+    page = offset >= all_jobs.size ? [] : all_jobs[offset, limit] || []
+    [page, all_jobs.size]
   end
 end

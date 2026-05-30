@@ -1,4 +1,5 @@
 require "sinatra"
+require "date"
 require "sinatra/reloader" if ENV.fetch("RACK_ENV", "production") == "development"
 require "yaml"
 require "erb"
@@ -343,30 +344,29 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
     @date_to      = escape_html(raw_date_to)
     @filter_mode  = escape_html(params["filter_mode"] || "and")
     @detail_open  = escape_html(params["detail_open"] || "false")
-    @source_mode  = parse_history_source_mode(params["source_mode"])
     requested_rows = [(params["rows"] || HISTORY_ROWS).to_i, 1].max
     @current_page = (params["p"] || 1).to_i
     offset = (@current_page - 1) * requested_rows
+
+    # Effective dates: default to last 7 days when no range is specified
+    effective_from = raw_date_from.to_s.empty? ? (Date.today - 6).strftime("%Y-%m-%d") : raw_date_from.to_s
+    effective_to   = raw_date_to.to_s.empty?   ? Date.today.strftime("%Y-%m-%d")       : raw_date_to.to_s
+    @using_sacct_default_dates = raw_date_from.to_s.empty? && raw_date_to.to_s.empty?
+
+    # Fetch all sacct jobs for the effective date range
+    scheduler_s     = @conf.key?("clusters") ? @scheduler[@cluster_name]        : @scheduler
+    bin_s           = @conf.key?("clusters") ? @bin[@cluster_name]               : @bin
+    bin_overrides_s = @conf.key?("clusters") ? @bin_overrides[@cluster_name]     : @bin_overrides
+    ssh_wrapper_s   = @conf.key?("clusters") ? @ssh_wrapper[@cluster_name]       : @ssh_wrapper
+    sacct_raw, @sacct_error, @sacct_command = scheduler_s.sacct_all_jobs(
+      effective_from, effective_to, bin_s, bin_overrides_s, ssh_wrapper_s
+    )
+
     history_search_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
-    if @source_mode == "sacct"
-      scheduler_s    = @conf.key?("clusters") ? @scheduler[@cluster_name]        : @scheduler
-      bin_s          = @conf.key?("clusters") ? @bin[@cluster_name]               : @bin
-      bin_overrides_s= @conf.key?("clusters") ? @bin_overrides[@cluster_name]     : @bin_overrides
-      ssh_wrapper_s  = @conf.key?("clusters") ? @ssh_wrapper[@cluster_name]       : @ssh_wrapper
-
-      sacct_raw, @sacct_error, @sacct_command = scheduler_s.sacct_all_jobs(
-        raw_date_from, raw_date_to, bin_s, bin_overrides_s, ssh_wrapper_s
-      )
-      all_sacct = filter_sacct_jobs(sacct_raw, @statuses, @filter, @filter_mode)
-      all_sacct.each { |j| j[JOB_ID] = j["JobID"] }
-      all_sacct = all_sacct.reverse  # newest first
-      @jobs_size = all_sacct.size
-      @jobs      = all_sacct[offset, requested_rows] || []
-    else
-      @jobs, @jobs_size = get_jobs_page(@conf, @cluster_name, @statuses, @filter, @filter_column, @date_from, @date_to, @filter_mode, @sort, @order, requested_rows, offset)
-    end
-
+    @jobs, @jobs_size = get_combined_jobs_page(
+      @conf, @cluster_name, sacct_raw, @statuses, @filter, @filter_column,
+      @filter_mode, effective_from, effective_to, @sort, @order, requested_rows, offset
+    )
     @history_search_elapsed_seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - history_search_started_at
     @rows         = [requested_rows, @jobs_size].min
     @page_size    = (@rows == 0) ? 1 : ((@jobs_size - 1) / @rows) + 1
