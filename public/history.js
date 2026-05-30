@@ -226,6 +226,20 @@ document.querySelectorAll('input[name="_historyCluster"]').forEach(radio => {
   });
 });
 
+// Add event listeners to data source radio buttons (OpenComposer vs All Slurm Jobs).
+document.querySelectorAll('input[name="_historySource"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('p');
+    if (radio.value === 'db') {
+      url.searchParams.delete('source_mode');
+    } else {
+      url.searchParams.set('source_mode', radio.value);
+    }
+    window.location.href = url.toString();
+  });
+});
+
 // Escape HTML special characters for safe DOM insertion.
 ocHistory.escapeHtml = function(text) {
   const d = document.createElement('div');

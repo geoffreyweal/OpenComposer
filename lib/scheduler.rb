@@ -49,6 +49,12 @@ class Scheduler
     [nil, nil]
   end
 
+  # Fetch all jobs for the current user within a date range from sacct.
+  # @return [Array<Array, String, String>] [jobs_array_or_nil, error_or_nil, command_or_nil]
+  def sacct_all_jobs(date_from, date_to, bin = nil, bin_overrides = nil, ssh_wrapper = nil)
+    [nil, nil, nil]
+  end
+
   # Fetch the batch script submitted for a job.
   # Override in subclasses that support this (e.g. Slurm via sacct -B).
   # @return [Array<String, String>] [script_content_or_nil, error_message_or_nil]

@@ -1,5 +1,6 @@
 # coding: utf-8
 require 'open3'
+require 'date'
 
 class Slurm < Scheduler
   # Submit a job to the Slurm scheduler using the 'sbatch' command.
@@ -199,6 +200,47 @@ class Slurm < Scheduler
       result[key] = value
     end
     result.empty? ? [nil, nil, command] : [result, nil, command]
+  rescue Exception => e
+    return nil, e.message, nil
+  end
+
+  # Fetch all jobs for the current user within a date range via sacct.
+  # Uses a fixed safe set of fields (no free-text fields that could contain pipe characters).
+  # Defaults to the last 7 days when no dates are supplied.
+  # Returns [jobs_array, nil, command] or [nil, error_message, command].
+  def sacct_all_jobs(date_from, date_to, bin = nil, bin_overrides = nil, ssh_wrapper = nil)
+    sacct = get_command_path("sacct", bin, bin_overrides)
+
+    fields = %w[JobID JobName Partition State Submit Start End Elapsed
+                WorkDir Account AllocCPUS ReqMem ExitCode]
+
+    effective_from = date_from.to_s.empty? ? (Date.today - 6).strftime("%Y-%m-%d") : date_from.to_s
+    effective_to   = date_to.to_s.empty?   ? Date.today.strftime("%Y-%m-%d")       : date_to.to_s
+
+    command = [ssh_wrapper, sacct, "-X", "--parsable2",
+               "--format=#{fields.join(',')}",
+               "--starttime=#{effective_from}",
+               "--endtime=#{effective_to}T23:59:59"].compact.join(" ")
+
+    stdout, stderr, status = Open3.capture3(command)
+    return nil, [stdout, stderr].join(" ").strip, command unless status.success?
+
+    lines = stdout.lines.map(&:chomp).reject(&:empty?)
+    return [], nil, command if lines.size < 2
+
+    header = lines[0].split('|')
+    jobs = []
+    lines[1..].each do |line|
+      row = {}
+      line.split('|').each_with_index do |value, idx|
+        key = header[idx]
+        next unless key
+        row[key] = value
+      end
+      jobs << row unless row.empty?
+    end
+
+    [jobs, nil, command]
   rescue Exception => e
     return nil, e.message, nil
   end

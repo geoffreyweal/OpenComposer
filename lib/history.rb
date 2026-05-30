@@ -256,7 +256,8 @@ helpers do
       "detail_open" => @detail_open,
       "rows" => @rows,
       "p" => @current_page,
-      "cluster" => @cluster_name
+      "cluster" => @cluster_name,
+      "source_mode" => @source_mode
     }
 
     overrides.each do |key, value|
@@ -280,6 +281,7 @@ helpers do
     query_params << ["rows", values["rows"]] if values["rows"] && values["rows"].to_i != HISTORY_ROWS
     query_params << ["p", values["p"]] if values["p"] && values["p"].to_i != 1
     query_params << ["cluster", values["cluster"]] if values["cluster"]
+    query_params << ["source_mode", values["source_mode"]] if values["source_mode"] && values["source_mode"] != "db"
 
     query_params.empty? ? "./history" : "./history?#{URI.encode_www_form(query_params)}"
   end
@@ -1200,5 +1202,47 @@ helpers do
   # Return whether the Job Script modal contains a filter hit.
   def job_script_modal_matches_filter?(job, filter)
     history_filter_hits_text?(job[OC_SCRIPT_CONTENT], filter)
+  end
+
+  # Return "sacct" or "db" (default).
+  def parse_history_source_mode(raw)
+    raw.to_s == "sacct" ? "sacct" : "db"
+  end
+
+  # Map a sacct State string to an OpenComposer status constant.
+  def sacct_state_to_oc_status(state)
+    s = state.to_s
+    return JOB_STATUS["completed"] if s.start_with?("CANCELLED")
+
+    case s
+    when "COMPLETED"
+      JOB_STATUS["completed"]
+    when "CONFIGURING", "REQUEUED", "RESIZING", "PENDING", "PREEMPTED", "SUSPENDED"
+      JOB_STATUS["queued"]
+    when "COMPLETING", "RUNNING", "STOPPED"
+      JOB_STATUS["running"]
+    when "BOOT_FAIL", "DEADLINE", "FAILED", "NODE_FAIL", "OUT_OF_MEMORY",
+         "REVOKED", "SPECIAL_EXIT", "TIMEOUT"
+      JOB_STATUS["failed"]
+    else
+      JOB_STATUS["completed"]
+    end
+  end
+
+  # Filter an array of sacct job hashes by status and text.
+  def filter_sacct_jobs(jobs, statuses, filter, filter_mode)
+    return [] if jobs.nil?
+
+    selected_statuses = Array(statuses).map(&:to_s)
+    filter_text = CGI.unescapeHTML(filter.to_s).downcase
+
+    jobs.select do |job|
+      oc_status = sacct_state_to_oc_status(job["State"].to_s)
+      next false unless selected_statuses.any? { |s| oc_status == JOB_STATUS[s] }
+      next true if filter_text.empty?
+
+      search_text = job.values.compact.map(&:to_s).join(" ").downcase
+      history_filter_mode_matches?(search_text, filter_text, filter_mode)
+    end
   end
 end
