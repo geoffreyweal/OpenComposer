@@ -156,12 +156,23 @@ class Slurm < Scheduler
     return nil, e.message
   end
 
-  # Fetch key fields for a single job from sacct for the Job Details modal.
+  # Fetch all available sacct fields for a single job (for the Job Details modal).
+  # Uses --helpformat to discover all fields, then queries with every field.
   # Returns [hash, nil] on success or [nil, error_message] on failure.
   def sacct_job(job_id, bin = nil, bin_overrides = nil, ssh_wrapper = nil)
-    sacct  = get_command_path("sacct", bin, bin_overrides)
-    fields = %w[JobID JobName Partition Account State Submit Start End Elapsed WorkDir NodeList AllocCPUS AllocTRES ReqMem MaxRSS ExitCode Comment]
-    command = [ssh_wrapper, sacct, "-j", job_id, "--format=#{fields.join(',')}", "--parsable2"].compact.join(" ")
+    sacct = get_command_path("sacct", bin, bin_overrides)
+
+    # Discover all available fields
+    help_cmd = [ssh_wrapper, sacct, "--helpformat"].compact.join(" ")
+    help_out, help_err, help_status = Open3.capture3(help_cmd)
+    return nil, "sacct --helpformat failed: #{[help_out, help_err].join(' ').strip}" unless help_status.success?
+
+    fields = help_out.split
+    return nil, "sacct --helpformat returned no fields" if fields.empty?
+
+    # Query the job with all fields
+    command = [ssh_wrapper, sacct, "-j", job_id,
+               "--format=#{fields.join(',')}", "--parsable2"].compact.join(" ")
     stdout, stderr, status = Open3.capture3(command)
     return nil, [stdout, stderr].join(" ").strip unless status.success?
 
