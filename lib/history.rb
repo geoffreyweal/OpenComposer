@@ -222,7 +222,7 @@ helpers do
 
   # Build a history page path while preserving the current filters.
   def history_valid_statuses
-    %w[running queued completed failed]
+    %w[running queued completed cancelled failed]
   end
 
   def parse_history_statuses(raw_statuses)
@@ -380,6 +380,8 @@ helpers do
       [$1.to_i, $2.to_i, value]
     when /\A(\d+)\[(\d+)\]\z/
       [$1.to_i, $2.to_i, value]
+    when /\A(\d+)_\[(\d+)/
+      [$1.to_i, $2.to_i, value]
     else
       [Float::INFINITY, Float::INFINITY, value]
     end
@@ -413,7 +415,8 @@ helpers do
         JOB_STATUS["queued"] => 0,
         JOB_STATUS["running"] => 1,
         JOB_STATUS["completed"] => 2,
-        JOB_STATUS["failed"] => 3
+        JOB_STATUS["cancelled"] => 3,
+        JOB_STATUS["failed"] => 4
       }
       [status_order.fetch(job[JOB_STATUS_ID], 99), *history_job_id_sort_key(job[JOB_ID])]
     when JOB_SUBMISSION_TIME
@@ -504,7 +507,8 @@ helpers do
           WHEN '#{JOB_STATUS["queued"]}' THEN 0
           WHEN '#{JOB_STATUS["running"]}' THEN 1
           WHEN '#{JOB_STATUS["completed"]}' THEN 2
-          WHEN '#{JOB_STATUS["failed"]}' THEN 3
+          WHEN '#{JOB_STATUS["cancelled"]}' THEN 3
+          WHEN '#{JOB_STATUS["failed"]}' THEN 4
           ELSE 99
         END
       SQL
@@ -1141,7 +1145,9 @@ helpers do
                                when JOB_STATUS["running"]
                                  ["bg-primary", "Running"]
                                when JOB_STATUS["completed"]
-                                 ["bg-secondary", "Completed"]
+                                 ["bg-success", "Completed"]
+                               when JOB_STATUS["cancelled"]
+                                 ["bg-secondary", "Cancelled"]
                                when JOB_STATUS["failed"]
                                  ["bg-danger", "Failed"]
                                else
@@ -1196,15 +1202,17 @@ helpers do
   # Map a sacct State string to an OpenComposer status constant.
   def sacct_state_to_oc_status(state)
     s = state.to_s
-    return JOB_STATUS["completed"] if s.start_with?("CANCELLED")
+    return JOB_STATUS["cancelled"] if s.start_with?("CANCELLED")
 
     case s
     when "COMPLETED"
       JOB_STATUS["completed"]
     when "CONFIGURING", "REQUEUED", "RESIZING", "PENDING", "PREEMPTED", "SUSPENDED"
       JOB_STATUS["queued"]
-    when "COMPLETING", "RUNNING", "STOPPED"
+    when "COMPLETING", "RUNNING"
       JOB_STATUS["running"]
+    when "STOPPED"
+      JOB_STATUS["cancelled"]
     when "BOOT_FAIL", "DEADLINE", "FAILED", "NODE_FAIL", "OUT_OF_MEMORY",
          "REVOKED", "SPECIAL_EXIT", "TIMEOUT"
       JOB_STATUS["failed"]
@@ -1275,7 +1283,8 @@ helpers do
       [job["End"].to_s, *history_job_id_sort_key(job[JOB_ID])]
     when JOB_STATUS_ID
       order = { JOB_STATUS["queued"] => 0, JOB_STATUS["running"] => 1,
-                JOB_STATUS["completed"] => 2, JOB_STATUS["failed"] => 3 }
+                JOB_STATUS["completed"] => 2, JOB_STATUS["cancelled"] => 3,
+                JOB_STATUS["failed"] => 4 }
       [order.fetch(job[JOB_STATUS_ID], 99), *history_job_id_sort_key(job[JOB_ID])]
     else  # JOB_ID (default)
       history_job_id_sort_key(job[JOB_ID])

@@ -26,7 +26,7 @@ end
 VERSION                ||= "2.0.0"
 SCHEDULERS_DIR_PATH    ||= "./lib/schedulers"
 HISTORY_ROWS           ||= 10
-JOB_STATUS             ||= { "queued" => "QUEUED", "running" => "RUNNING", "completed" => "COMPLETED", "failed" => "FAILED" }
+JOB_STATUS             ||= { "queued" => "QUEUED", "running" => "RUNNING", "completed" => "COMPLETED", "failed" => "FAILED", "cancelled" => "CANCELLED" }
 JOB_ID                 ||= "id"
 JOB_APP_NAME           ||= "appName"
 JOB_DIR_NAME           ||= "appPath"

@@ -104,15 +104,17 @@ class Slurm < Scheduler
           JOB_STATUS_ID =>
           # When a job is canceled, the output is "CANCELLED by 1025".
           if job_state.start_with?("CANCELLED")
-            JOB_STATUS["completed"]
+            JOB_STATUS["cancelled"]
           else
             case job_state
-            when "CANCELLED", "COMPLETED"
+            when "COMPLETED"
               JOB_STATUS["completed"]
             when "CONFIGURING", "REQUEUED", "RESIZING", "PENDING", "PREEMPTED", "SUSPENDED"
               JOB_STATUS["queued"]
-            when "COMPLETING", "RUNNING", "STOPPED"
+            when "COMPLETING", "RUNNING"
               JOB_STATUS["running"]
+            when "STOPPED"
+              JOB_STATUS["cancelled"]
             when "BOOT_FAIL", "DEADLINE", "FAILED", "NODE_FAIL", "OUT_OF_MEMORY", "REVOKED", "SPECIAL_EXIT", "TIMEOUT"
               JOB_STATUS["failed"]
             else

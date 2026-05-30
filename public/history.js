@@ -13,6 +13,7 @@ ocHistory.applyFilter = function() {
     document.getElementById('_historyStatusQueued'),
     document.getElementById('_historyStatusRunning'),
     document.getElementById('_historyStatusCompleted'),
+    document.getElementById('_historyStatusCancelled'),
     document.getElementById('_historyStatusFailed')
   ].filter(Boolean);
   if (!filterInput) return;
