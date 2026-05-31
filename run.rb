@@ -449,14 +449,27 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
         cache = job_record_to_legacy_hash(record)
 
         if cache.nil?
-          @error_msg = "Specified Job ID (#{id}) is not found."
-          return erb :error
+          if @dir_name == "Slurm"
+            sched_inst  = create_scheduler(@conf)
+            bin_val     = @conf["bin"]
+            bin_ov_val  = @conf["bin_overrides"]
+            ssh_val     = @conf["ssh_wrapper"]
+            sched_s     = @conf.key?("clusters") ? sched_inst[cluster_name] : sched_inst
+            bin_s2      = @conf.key?("clusters") ? bin_val[cluster_name]    : bin_val
+            bin_ov_s2   = @conf.key?("clusters") ? bin_ov_val[cluster_name] : bin_ov_val
+            ssh_s2      = @conf.key?("clusters") ? ssh_val[cluster_name]    : ssh_val
+            script_content, _err = sched_s.batch_script(id, bin_s2, bin_ov_s2, ssh_s2)
+            @script_content = escape_html(script_content) if script_content
+          else
+            @error_msg = "Specified Job ID (#{id}) is not found."
+            return erb :error
+          end
+        else
+          replace_with_cache(@header, cache)
+          replace_with_cache(@body["form"], cache)
+          @script_content = escape_html(cache[OC_SCRIPT_CONTENT])
+          @submit_content = escape_html(cache[SUBMIT_CONTENT])
         end
-
-        replace_with_cache(@header, cache)
-        replace_with_cache(@body["form"], cache)
-        @script_content = escape_html(cache[OC_SCRIPT_CONTENT])
-        @submit_content = escape_html(cache[SUBMIT_CONTENT])
       elsif !error_msg.nil? || !script_path.nil? # When job submission failed or script_path != nil (because after script file has been saved)
         replace_with_cache(@header, error_params)
         replace_with_cache(@body["form"], error_params)
