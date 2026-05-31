@@ -51,11 +51,14 @@
     </div>
   </div>
 
-  <div id="<%= FORM_LAYOUT %>" class="row row-cols-1 row-cols-lg-2 mx-1 bg-gradient" style="background: <%= @conf['form_color'] %>;">
+  <% _form_empty = @body["form"].nil? || @body["form"].empty? %>
+  <div id="<%= FORM_LAYOUT %>" class="row <%= _form_empty ? 'row-cols-1' : 'row-cols-1 row-cols-lg-2' %> mx-1 bg-gradient" style="background: <%= @conf['form_color'] %>;">
     <!-- Form Body -->
+    <% unless _form_empty %>
     <div class="col pt-3">
       <%= output_body(@body, @header, @manifest['name'], @manifest['dirname']) %>
     </div>
+    <% end %>
 
     <!-- Script Content Section -->
     <div class="col py-3 d-flex flex-column">
