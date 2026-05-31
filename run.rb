@@ -131,6 +131,9 @@ def create_conf
   conf["submit_button_color"]     ||= "#FFAAAA"
   conf["highlight_theme"]         ||= "vs"
   conf["directive_color"]         ||= "#D73A49"
+  conf["show_home_directory"] = conf.fetch("show_home_directory", true)
+  conf["show_shell_access"]   = conf.fetch("show_shell_access",   true)
+  conf["show_open_ondemand"]  = conf.fetch("show_open_ondemand",  true)
 
   # Set the values for "clusters:" and "history_db"
   if conf.key?("clusters")

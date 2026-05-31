@@ -162,6 +162,13 @@
         <div class="container-fluid">
           <div class="collapse navbar-collapse">
             <ul class="navbar-nav">
+              <% if @conf["navbar_logo"].to_s.strip.length > 0 %>
+                <li class="nav-item">
+                  <a target="_blank" href="<%= @my_ood_url %>" class="nav-link py-0">
+                    <img src="<%= @script_name %>/<%= @conf["navbar_logo"] %>" alt="Logo" style="height: 30px; vertical-align: middle;">
+                  </a>
+                </li>
+              <% end %>
               <li class="nav-item">
                 <a href="<%= @script_name %>/" class="nav-link <%= active?("" == @dir_name) %>">Home</a>
               </li>
@@ -196,13 +203,15 @@
             </ul>
 
             <ul class="navbar-nav ms-auto">
-              <li class="nav-item">
-                <a target="_blank" href="<%= @my_ood_url %>/pun/sys/dashboard/files" class="nav-link py-0">
-                  <i class="fas fa-home fa-fw" style="font-size: 20px; display: inline-block; vertical-align: middle;" aria-hidden="true"></i>
-                  <span class="d-none d-lg-inline ms-1" style="display: inline-block; vertical-align: middle;">Home Directory</span>
-                </a>
-              </li>
-              <% unless @login_node.nil? %>
+              <% if @conf["show_home_directory"] %>
+                <li class="nav-item">
+                  <a target="_blank" href="<%= @my_ood_url %>/pun/sys/dashboard/files" class="nav-link py-0">
+                    <i class="fas fa-home fa-fw" style="font-size: 20px; display: inline-block; vertical-align: middle;" aria-hidden="true"></i>
+                    <span class="d-none d-lg-inline ms-1" style="display: inline-block; vertical-align: middle;">Home Directory</span>
+                  </a>
+                </li>
+              <% end %>
+              <% if @conf["show_shell_access"] && !@login_node.nil? %>
                 <% if @conf["login_node"].is_a?(Hash) && @conf["login_node"].values.compact.uniq.size > 1 %>
                   <li class="nav-item dropdown">
                     <a href="#" class="nav-link dropdown-toggle py-0" data-bs-toggle="dropdown">
@@ -224,12 +233,14 @@
                   </li>
                 <% end %>
               <% end %>
-              <li class="nav-item">
-                <a target="_blank" href="<%= @my_ood_url %>" class="nav-link py-0">
-                  <img src="<%= @ood_logo_path %>" class="ood-logo" alt="OOD logo" style="height: 20px; display: inline-block; vertical-align: middle;">
-                  <span class="d-none d-lg-inline ms-1" style="vertical-align: middle;">Open OnDemand</span>
-                </a>
-              </li>
+              <% if @conf["show_open_ondemand"] %>
+                <li class="nav-item">
+                  <a target="_blank" href="<%= @my_ood_url %>" class="nav-link py-0">
+                    <img src="<%= @ood_logo_path %>" class="ood-logo" alt="OOD logo" style="height: 20px; display: inline-block; vertical-align: middle;">
+                    <span class="d-none d-lg-inline ms-1" style="vertical-align: middle;">Open OnDemand</span>
+                  </a>
+                </li>
+              <% end %>
             </ul>
           </div>
         </div>
