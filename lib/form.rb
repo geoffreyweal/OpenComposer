@@ -231,10 +231,18 @@ helpers do
   def output_script_js(form, line, app_name, dir_name)
     line = normalize_interpolation(line)
     line = substitute_oc_constants(line, app_name, dir_name)
+    raw_line = line.dup
     line = escape_js_string(line)
 
     matches = line.scan(/\#\{.+?\}/)
-    return "  selectedValues.push(\'#{line}\');\n" if matches.empty?
+    if matches.empty?
+      pattern_js = ""
+      unless raw_line.empty?
+        prefix_js  = escape_js_string(raw_line)
+        pattern_js = "  ocForm.scriptLinePatterns.push({prefix:'#{prefix_js}', regex:null, keys:[], widgets:[], separators:[], canHide:[]});\n"
+      end
+      return ["  selectedValues.push(\'#{line}\');\n", pattern_js]
+    end
 
     keys = matches.flat_map do |str|
       inner = str[2..-2] # "#{time_1}" -> "time_1"
@@ -312,14 +320,38 @@ helpers do
 
     if exist_keys.length > 0
       # Convert to JavaScript array
-      keys_array          = "['" + exist_keys.join("', '") + "']"
-      widgets_array       = "['" + widgets.join("', '") + "']"
-      can_hide_array      = "["  + can_hide.map { |r| r }.join(", ") + "]"
-      separators_array    = "["  + separators.map { |s| s.nil? ? 'null'  : "'#{s}'" }.join(", ") + "]"
+      keys_array       = "['" + exist_keys.join("', '") + "']"
+      widgets_array    = "['" + widgets.join("', '") + "']"
+      can_hide_array   = "["  + can_hide.map { |r| r }.join(", ") + "]"
+      separators_array = "["  + separators.map { |s| s.nil? ? 'null' : "'#{s}'" }.join(", ") + "]"
 
-      return "  ocForm.showLine(selectedValues, '#{line}', #{keys_array}, #{widgets_array}, #{can_hide_array}, #{separators_array});\n"
+      show_js = "  ocForm.showLine(selectedValues, '#{line}', #{keys_array}, #{widgets_array}, #{can_hide_array}, #{separators_array});\n"
+
+      has_complex = raw_line.match?(/\#\{(calc|zeropadding|dirname|basename)\(/)
+      raw_parts   = raw_line.split(/\#\{[^}]+\}/, -1)
+      prefix      = raw_parts[0]
+      pattern_js  = ""
+      if has_complex
+        unless prefix.empty?
+          prefix_js  = escape_js_string(prefix)
+          pattern_js = "  ocForm.scriptLinePatterns.push({prefix:'#{prefix_js}', regex:null, keys:[], widgets:[], separators:[], canHide:[]});\n"
+        end
+      else
+        unless prefix.empty?
+          regex_parts = []
+          raw_parts.each_with_index do |part, i|
+            regex_parts << Regexp.escape(part)
+            regex_parts << (i < raw_parts.length - 2 ? "(.*?)" : "(.*)") if i < raw_parts.length - 1
+          end
+          regex_str  = ("^" + regex_parts.join("") + "$").gsub("/", "\\/")
+          prefix_js  = escape_js_string(prefix)
+          pattern_js = "  ocForm.scriptLinePatterns.push({prefix:'#{prefix_js}', regex:/#{regex_str}/, keys:#{keys_array}, widgets:#{widgets_array}, separators:#{separators_array}, canHide:#{can_hide_array}});\n"
+        end
+      end
+
+      return [show_js, pattern_js]
     else
-      return "  selectedValues.push('#{line}');\n"
+      return ["  selectedValues.push('#{line}');\n", ""]
     end
   end
 
@@ -981,7 +1013,7 @@ HTML
   def output_body(body, header, app_name, dir_name)
     return "" unless body&.key?("form")
 
-    @js ||= { "init_dw" => "", "exec_dw" => "", "script" => "", "once" => "", "submit" => "" }
+    @js ||= { "init_dw" => "", "exec_dw" => "", "script" => "", "once" => "", "submit" => "", "script_patterns" => "" }
     form = body["form"].merge({OC_SCRIPT_CONTENT => {"widget" => "textarea"}})
     obj = form.merge(header)
     script_content = body["script"].is_a?(Hash) ? body.dig("script", "content") : body["script"]
@@ -1022,13 +1054,16 @@ HTML
     script_content = body["script"].is_a?(Hash) ? body.dig("script", "content") : body["script"]
     if !script_content.nil?
       script_content.split("\n").each do |line|
-        @js["script"] += output_script_js(obj, line, app_name, dir_name)
+        show_js, pat_js = output_script_js(obj, line, app_name, dir_name)
+        @js["script"]          += show_js
+        @js["script_patterns"] += pat_js
       end
     end
 
     if !submit_content.nil?
       submit_content.split("\n").each do |line|
-        @js["submit"] += output_script_js(obj, line, app_name, dir_name)
+        show_js, _pat_js = output_script_js(obj, line, app_name, dir_name)
+        @js["submit"] += show_js
       end
     end
 
@@ -1039,7 +1074,7 @@ HTML
   def output_header(body, header, app_name="A", dir_name="B")
     return "" if header.nil? || header.empty?
 
-    @js = {"init_dw" => "", "exec_dw" => "", "script" => "", "once" => "", "submit" => ""}
+    @js = {"init_dw" => "", "exec_dw" => "", "script" => "", "once" => "", "submit" => "", "script_patterns" => ""}
     script_content = body["script"].is_a?(Hash) ? body.dig("script", "content") : body["script"]
     submit_content = body["submit"].is_a?(Hash) ? body.dig("submit", "content") : body["submit"]
 

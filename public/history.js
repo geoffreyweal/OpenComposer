@@ -228,6 +228,47 @@ document.querySelectorAll('input[name="_historyCluster"]').forEach(radio => {
 });
 
 
+// Load the script from a "Job Script (Slurm)" modal into the target app via
+// sessionStorage, so the form can parse the #SBATCH directives client-side and
+// preserve all content below the directive block.
+ocHistory.loadExtScript = function(btn) {
+  var modal = btn.closest('.modal');
+  if (!modal) return;
+  var body = modal.querySelector('.modal-body[data-script-job-id]');
+  if (!body) return;
+
+  var pre = body.querySelector('pre');
+  var scriptContent = pre ? pre.textContent : null;
+  if (!scriptContent) return;
+
+  var cluster  = body.dataset.cluster || '';
+  var base     = window.location.pathname.replace(/\/history$/, '');
+  var formData = new URLSearchParams({ cluster: cluster });
+
+  btn.disabled    = true;
+  btn.textContent = 'Loading…';
+
+  fetch(base + '/history/save_external_script', { method: 'POST', body: formData })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.url) {
+        var key = '_oc_ext_' + Date.now();
+        sessionStorage.setItem(key, scriptContent);
+        var sep = data.url.indexOf('?') >= 0 ? '&' : '?';
+        window.location.href = data.url + sep + 'ocExtLoad=' + encodeURIComponent(key);
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        btn.disabled    = false;
+        btn.textContent = 'Load parameters';
+      }
+    })
+    .catch(function(e) {
+      alert('Error: ' + e.message);
+      btn.disabled    = false;
+      btn.textContent = 'Load parameters';
+    });
+};
+
 // Escape HTML special characters for safe DOM insertion.
 ocHistory.escapeHtml = function(text) {
   const d = document.createElement('div');

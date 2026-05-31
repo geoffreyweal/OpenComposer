@@ -1,4 +1,68 @@
 
+// Parse #SBATCH / scheduler directives in the script textarea into form widgets
+// using the patterns registered in ocForm.scriptLinePatterns by form.rb.
+ocForm.parseScriptToWidgets = function() {
+  if (!ocForm.scriptArea || !ocForm.scriptLinePatterns) return;
+
+  const lines = ocForm.scriptArea.value.split('\n');
+
+  for (const pat of ocForm.scriptLinePatterns) {
+    if (!pat.regex || pat.keys.length === 0) continue;
+    const matchingLine = lines.find(function(line) { return pat.regex.test(line); });
+    if (!matchingLine) continue;
+
+    const m = matchingLine.match(pat.regex);
+    if (!m) continue;
+
+    for (var i = 0; i < pat.keys.length; i++) {
+      var key    = pat.keys[i];
+      var widget = pat.widgets[i];
+      var value  = m[i + 1];
+      if (value === undefined || value === null) continue;
+
+      switch (widget) {
+      case 'number':
+      case 'text':
+      case 'email': {
+        var el = document.getElementById(key);
+        if (el && !el.disabled) el.value = value;
+        break;
+      }
+      case 'select': {
+        var el = document.getElementById(key);
+        if (el && !el.disabled) {
+          var opts = Array.from(el.querySelectorAll('option'));
+          var idx  = opts.findIndex(function(o) { return o.dataset.value === value; });
+          if (idx >= 0) el.selectedIndex = idx;
+        }
+        break;
+      }
+      case 'radio': {
+        var radios = document.getElementsByName(key);
+        for (var r of radios) {
+          if (!r.disabled && r.dataset.value === value) {
+            r.checked = true;
+            break;
+          }
+        }
+        break;
+      }
+      }
+    }
+  }
+
+  ocForm.execDynamicWidget();
+};
+
+// Debounced wrapper for parseScriptToWidgets — fires 500 ms after the last keypress.
+ocForm.debouncedParseScript = (function() {
+  var timer = null;
+  return function() {
+    clearTimeout(timer);
+    timer = setTimeout(function() { ocForm.parseScriptToWidgets(); }, 500);
+  };
+})();
+
 // Adjust a textarea height based on the content.
 ocForm.updateHeight = function(area) {
   if (!area) return;

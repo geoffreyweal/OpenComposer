@@ -670,6 +670,15 @@ get "/_file_or_directory" do
   end
 end
 
+post "/history/save_external_script" do
+  conf         = create_conf
+  cluster_name = conf.key?("clusters") ? (params["cluster"] || conf["clusters"].keys.first) : nil
+  target_app   = conf["external_reload_app"] || "Slurm"
+  cluster_param = cluster_name ? "?#{HEADER_CLUSTER_NAME}=#{URI.encode_www_form_component(cluster_name)}" : ""
+  content_type :json
+  { url: "#{request.script_name}/#{target_app}#{cluster_param}" }.to_json
+end
+
 get "/job_details" do
   content_type :json
 

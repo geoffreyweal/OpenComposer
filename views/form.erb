@@ -130,6 +130,10 @@ ocForm.submitHighlight = document.getElementById('<%= SUBMIT_CONTENT %>_highligh
 </script>
 <script src="form.js"></script>
 <script>
+ocForm.scriptLinePatterns = [];
+<%= @js["script_patterns"].chomp %>
+</script>
+<script>
 // Executes functions that should run once.
 ocForm.onceExec = function() {
 <%= @js["once"].chomp %>
@@ -366,6 +370,22 @@ window.onload = function() {
   ocForm.lastGeneratedScript = generatedScript;
   ocForm.lastGeneratedSubmit = generatedSubmit;
   ocForm.refreshEditorLayout();
+
+  var _ocExtKey = new URLSearchParams(window.location.search).get('ocExtLoad');
+  if (_ocExtKey) {
+    var _ocExtScript = sessionStorage.getItem(_ocExtKey);
+    sessionStorage.removeItem(_ocExtKey);
+    if (_ocExtScript !== null && ocForm.scriptArea) {
+      ocForm.scriptArea.value = _ocExtScript;
+      ocForm.parseScriptToWidgets();
+      ocForm.execDynamicWidget();
+      ocForm.refreshEditorLayout();
+    }
+  }
+
+  if (ocForm.scriptArea) {
+    ocForm.scriptArea.addEventListener('input', ocForm.debouncedParseScript);
+  }
 
   window.addEventListener('resize', () => {
     window.requestAnimationFrame(() => ocForm.refreshEditorLayout());
