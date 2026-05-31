@@ -473,14 +473,25 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
 
     return erb :history
   else # application form
-    @table_index = 1
-    @manifest = @manifests.find { |m| "#{m.dirname}" == @dir_name }
+    @table_index     = 1
+    generic_apps_dir = @conf["generic_apps_dir"] || "./generic_apps"
+
+    # Apps under the _generic/ URL prefix are loaded from generic_apps_dir and
+    # are intentionally excluded from the main index listing shown to users.
+    if @dir_name.start_with?("_generic/")
+      @app_base_path = File.join(generic_apps_dir, @dir_name.sub(/\A_generic\//, ""))
+      @manifest      = create_manifest(@app_base_path)
+    else
+      @manifest      = @manifests.find { |m| "#{m.dirname}" == @dir_name }
+      @app_base_path = File.join(@apps_dir, @dir_name)
+    end
+
     unless @manifest.nil?
       begin
         @name = @manifest["name"]
         @OC_APP_NAME = @name
         @OC_DIR_NAME = @manifest["dirname"]
-        @body = read_yaml(File.join(@apps_dir, @dir_name, "form.yml"))
+        @body = read_yaml(File.join(@app_base_path, "form.yml"))
         @header = if @body.key?("header")
                     @body["header"]
                   else
@@ -496,7 +507,7 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
       # widgets is allowed. It is normalized to an empty hash below so the
       # rendering helpers (which call body["form"].merge(...)) do not crash.
       ["form.yml", "form.yml.erb"].each do |name|
-        file = File.join(@apps_dir, @dir_name, name)
+        file = File.join(@app_base_path, name)
         next unless File.exist?(file)
 
         halt 500, "In ./#{file}, \"form:\" must be defined." unless @body.key?("form")
@@ -679,10 +690,10 @@ end
 post "/history/save_external_script" do
   conf         = create_conf
   cluster_name = conf.key?("clusters") ? (params["cluster"] || conf["clusters"].keys.first) : nil
-  target_app   = conf["external_reload_app"] || "Slurm"
+  target_app   = conf["external_reload_app"] || "slurm"
   cluster_param = cluster_name ? "?#{HEADER_CLUSTER_NAME}=#{URI.encode_www_form_component(cluster_name)}" : ""
   content_type :json
-  { url: "#{request.script_name}/#{target_app}#{cluster_param}" }.to_json
+  { url: "#{request.script_name}/_generic/#{target_app}#{cluster_param}" }.to_json
 end
 
 get "/job_details" do
@@ -790,7 +801,12 @@ post "/*" do
 
     return show_website(nil, error_msg)
   else # application form
-    app_path = File.join(conf["apps_dir"], request.path_info)
+    generic_apps_dir = conf["generic_apps_dir"] || "./generic_apps"
+    app_path = if request.path_info.start_with?("/_generic/")
+                 File.join(generic_apps_dir, request.path_info.sub(/\A\/_generic\//, ""))
+               else
+                 File.join(conf["apps_dir"], request.path_info)
+               end
     manifest = create_manifest(app_path)
 
     script_location = params[HEADER_SCRIPT_LOCATION]
