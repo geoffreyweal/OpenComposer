@@ -648,6 +648,10 @@ helpers do
       CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(_status);
       CREATE INDEX IF NOT EXISTS idx_jobs_submission_time ON jobs(_submission_time);
       CREATE INDEX IF NOT EXISTS idx_jobs_updated_time ON jobs(_updated_time);
+      CREATE TABLE IF NOT EXISTS deleted_generic_jobs (
+        _job_id TEXT PRIMARY KEY,
+        _deleted_at TEXT NOT NULL
+      );
     SQL
   end
 
@@ -723,6 +727,19 @@ helpers do
   # Delete one job record.
   def delete_job(db, job_id)
     db.execute("DELETE FROM jobs WHERE _job_id = ?", [job_id])
+  end
+
+  # Record that a generic (non-DB) job should be hidden from the history view.
+  def mark_generic_job_deleted(db, job_id)
+    db.execute(
+      "INSERT OR IGNORE INTO deleted_generic_jobs (_job_id, _deleted_at) VALUES (?, ?)",
+      [job_id, Time.now.utc.iso8601]
+    )
+  end
+
+  # Return the set of generic job IDs that have been hidden via "Delete Info".
+  def get_deleted_generic_job_ids(db)
+    db.execute("SELECT _job_id FROM deleted_generic_jobs").map { |row| row["_job_id"] }.to_set
   end
 
   # Yield each job record.
@@ -1334,11 +1351,14 @@ helpers do
       db_map[row["_job_id"]] = legacy
     end
 
+    deleted_generic = get_deleted_generic_job_ids(db)
+
     all_ids = (sacct_map.keys + db_map.keys).uniq
     selected_statuses = Array(statuses).map(&:to_s)
     filter_text = CGI.unescapeHTML(filter.to_s).downcase
 
     all_ids.filter_map do |job_id|
+      next if deleted_generic.include?(job_id) && db_map[job_id].nil?
       row = build_combined_row(job_id, sacct_map[job_id], db_map[job_id])
 
       next unless selected_statuses.any? { |s| row[JOB_STATUS_ID] == JOB_STATUS[s] }

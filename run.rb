@@ -797,11 +797,15 @@ post "/*" do
       end
       output_log("Cancel job", scheduler, cluster: cluster_name, job_ids: job_ids)
     when "DeleteInfo"
-      if File.exist?(history_db)
+      if history_db
         db = open_history_db(conf, conf.key?("clusters") ? cluster_name : nil)
         db.transaction do
           job_ids.each do |job_id|
-            delete_job(db, job_id)
+            if find_job(db, job_id)
+              delete_job(db, job_id)
+            else
+              mark_generic_job_deleted(db, job_id)
+            end
           end
         end
         output_log("Delete job information", scheduler, cluster: cluster_name, job_ids: job_ids)
