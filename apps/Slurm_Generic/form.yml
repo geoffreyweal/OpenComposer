@@ -1,4 +1,9 @@
 ---
 form:
-
+  nothing_setting:
+    widget: number
+    label: Nothing setting
+    value: 1
+    min:   1
+    step:  1
 script: |
