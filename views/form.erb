@@ -250,13 +250,11 @@ document.addEventListener('keydown', function(event) {
   }
 });
 
-ocForm["scriptManuallyModified"] = false;
 ocForm["submitManuallyModified"] = false;
 ocForm.previousScript = ""
 ocForm.multiSelectDisabledIndexes = {};
 ocForm.previousValues = {};
 ocForm.previousRadioValues = {};
-ocForm.lastGeneratedScript = "";
 ocForm.lastGeneratedSubmit = "";
 
 // Save the current value of a form element before modification.
@@ -307,19 +305,13 @@ ocForm.restorePreviousValue = function(id) {
   }
 };
 
-// Mark that the script/submit section was manually edited by the user.
+// Mark that the submit section was manually edited by the user.
 ocForm.markManuallyModified = function(content_type) {
-  if (content_type === "script") {
-    ocForm["scriptManuallyModified"] = <%= @script_overwrite_warning_enabled ? "true" : "false" %>;
-  }
-  else { // content_type is "submit"
+  if (content_type === "submit") {
     ocForm["submitManuallyModified"] = <%= @submit_overwrite_warning_enabled ? "true" : "false" %>;
   }
 };
 
-// When a form widget changes, apply its effect to the script/submit areas.
-// If the area was manually edited, only the lines driven by the changed widget
-// are updated (via mergeScriptChanges); the rest of the manual edits are kept.
 // content_type is "both", "script" or "submit"
 ocForm.confirmOverwrite = function(content_type, id, onDiscard) {
   onDiscard();

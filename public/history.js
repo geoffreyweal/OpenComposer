@@ -228,6 +228,17 @@ document.querySelectorAll('input[name="_historyCluster"]').forEach(radio => {
 });
 
 
+// When the browser restores this page from bfcache (user pressed Back), re-enable
+// any Load-parameters buttons that were disabled before navigation.
+window.addEventListener('pageshow', function(event) {
+  if (event.persisted) {
+    document.querySelectorAll('button[onclick*="loadExtScript"]').forEach(function(btn) {
+      btn.disabled = false;
+      btn.textContent = 'Load parameters';
+    });
+  }
+});
+
 // Load the script from a "Job Script (Slurm)" modal into the target app via
 // sessionStorage, so the form can parse the #SBATCH directives client-side and
 // preserve all content below the directive block.
