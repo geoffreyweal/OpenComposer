@@ -407,7 +407,16 @@ def load_templates(conf)
     begin
       yaml = YAML.safe_load(File.read(path))
       next unless yaml.is_a?(Hash) && yaml["name"]
-      { "slug" => File.basename(path, ".yml"), "name" => yaml["name"], "description" => yaml["description"].to_s }
+      app_path = yaml["app_path"].to_s.strip
+      app_path = yaml.dig("values", "appPath").to_s.strip if app_path.empty?
+      app_path = "_generic/slurm" if app_path.empty?
+      {
+        "slug"        => File.basename(path, ".yml"),
+        "name"        => yaml["name"],
+        "description" => yaml["description"].to_s,
+        "app_path"    => app_path,
+        "icon"        => yaml["icon"].to_s
+      }
     rescue
       nil
     end
@@ -834,12 +843,14 @@ post "/templates" do
     i += 1
   end
 
-  skip   = %w[template_name template_description splat captures]
+  skip   = %w[template_name template_description _tmpl_icon splat captures]
   values = params.each_with_object({}) { |(k, v), h| h[k.to_s] = v.to_s unless skip.include?(k) }
 
   File.write(File.join(dir, "#{slug}.yml"), {
     "name"        => name,
     "description" => params["template_description"].to_s.strip,
+    "app_path"    => params[JOB_DIR_NAME].to_s.strip,
+    "icon"        => params["_tmpl_icon"].to_s,
     "values"      => values
   }.to_yaml)
 

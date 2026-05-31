@@ -36,14 +36,37 @@ end
 
 helpers do
   # Create an HTML snippet for a user template card with a delete button.
-  def output_template_thumbnail(slug, name, description)
-    width     = @conf['thumbnail_width']
-    safe_nm   = ERB::Util.h(name)
-    safe_dsc  = ERB::Util.h(description.to_s)
-    enc_slug  = ERB::Util.u(slug)
-    safe_cfm  = name.gsub("\\", "\\\\\\\\").gsub("'", "\\'")
-    desc_html = description.to_s.strip.empty? ? "" :
+  def output_template_thumbnail(slug, name, description, app_path, icon)
+    width      = @conf['thumbnail_width']
+    safe_nm    = ERB::Util.h(name)
+    safe_dsc   = ERB::Util.h(description.to_s)
+    enc_slug   = ERB::Util.u(slug)
+    safe_cfm   = name.gsub("\\", "\\\\\\\\").gsub("'", "\\'")
+    safe_app   = ERB::Util.h(app_path.to_s)
+    desc_html  = description.to_s.strip.empty? ? "" :
       "<div class=\"small text-muted mt-1\" style=\"word-break:break-word;\">#{safe_dsc}</div>"
+
+    raw_icon  = icon.to_s
+    icon_html = if raw_icon.start_with?("bi-", "fa-")
+      "<i class=\"#{ERB::Util.h(raw_icon)}\" style=\"font-size: #{width}px; width: #{width}px; height: 100px; line-height: 1;\"></i>"
+    elsif raw_icon.start_with?("http://", "https://")
+      "<img src=\"#{ERB::Util.h(raw_icon)}\" class=\"img-thumbnail\" width=\"#{width}\" height=\"100\" alt=\"#{safe_nm}\">"
+    elsif !raw_icon.empty?
+      url_path = if app_path.to_s.start_with?("_generic/")
+        gd  = @conf["generic_apps_dir"] || "./generic_apps"
+        sub = app_path.sub(/\A_generic\//, "")
+        local = File.join(Dir.pwd, gd, sub, raw_icon)
+        File.exist?(local) ? File.join(@script_name, "/", gd, sub, raw_icon) : nil
+      else
+        tp    = File.join("/", @apps_dir, app_path, raw_icon)
+        local = File.join(Dir.pwd, tp)
+        File.exist?(local) ? File.join(@script_name, tp) : nil
+      end
+      url_path ? "<img src=\"#{ERB::Util.h(url_path)}\" class=\"img-thumbnail\" width=\"#{width}\" height=\"100\" alt=\"#{safe_nm}\">" :
+                 "<i class=\"bi bi-file-earmark-code\" style=\"font-size: #{width}px; width: #{width}px; height: 100px; line-height: 1;\"></i>"
+    else
+      "<i class=\"bi bi-file-earmark-code\" style=\"font-size: #{width}px; width: #{width}px; height: 100px; line-height: 1;\"></i>"
+    end
 
     <<~HTML
       <div class="col text-center">
@@ -57,8 +80,8 @@ helpers do
             </button>
           </form>
           <div class="flex-grow-1 d-flex align-items-center">
-            <a href="#{@script_name}/_generic/slurm?template=#{enc_slug}" class="stretched-link position-relative text-reset">
-              <i class="bi bi-file-earmark-code" style="font-size: #{width}px; width: #{width}px; height: 100px; line-height: 1;"></i>
+            <a href="#{@script_name}/#{safe_app}?template=#{enc_slug}" class="stretched-link position-relative text-reset">
+              #{icon_html}
             </a>
           </div>
           #{safe_nm}

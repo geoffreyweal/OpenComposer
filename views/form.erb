@@ -42,6 +42,7 @@
       </h3>
       <input type="hidden" name="<%= JOB_APP_NAME %>" value="<%= @manifest['name'] %>">
       <input type="hidden" name="<%= JOB_DIR_NAME %>" value="<%= @dir_name %>">
+      <input type="hidden" name="_tmpl_icon" value="<%= ERB::Util.h(@manifest['icon'].to_s) %>">
       <p><%= @manifest['description'] %></p>
     </div>
 
