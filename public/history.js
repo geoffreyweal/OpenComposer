@@ -236,18 +236,13 @@ window.addEventListener('pageshow', function(event) {
       btn.disabled = false;
       btn.textContent = 'Load parameters';
     });
-    // Re-enable external-job links left in the "Opening…" state when the user
-    // navigated away and then returned via bfcache.
-    document.querySelectorAll('.oc-ext-job-link').forEach(function(link) {
-      link.style.pointerEvents = '';
-      link.textContent = link.dataset.origText || 'Job';
-    });
   }
 });
 
-// Load the script from a "Job Script (Slurm)" modal into the target app via
-// sessionStorage, so the form can parse the #SBATCH directives client-side and
-// preserve all content below the directive block.
+// Load the script from a "Job Script (Slurm - Generic)" modal into the target
+// app via sessionStorage, prefilling the script editor and all three header
+// fields (Script location, Script name, Job name) from the metadata stashed by
+// loadJobScript.
 ocHistory.loadExtScript = function(btn) {
   var modal = btn.closest('.modal');
   if (!modal) return;
@@ -269,8 +264,14 @@ ocHistory.loadExtScript = function(btn) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.url) {
+        var payload = {
+          script:         scriptContent,
+          scriptLocation: body.dataset.extScriptLocation || '',
+          scriptName:     body.dataset.extScriptName     || '',
+          jobName:        body.dataset.extJobName        || ''
+        };
         var key = '_oc_ext_' + Date.now();
-        sessionStorage.setItem(key, scriptContent);
+        sessionStorage.setItem(key, JSON.stringify(payload));
         var sep = data.url.indexOf('?') >= 0 ? '&' : '?';
         window.location.href = data.url + sep + 'ocExtLoad=' + encodeURIComponent(key);
       } else {
@@ -285,76 +286,6 @@ ocHistory.loadExtScript = function(btn) {
       btn.textContent = 'Load parameters';
     });
 };
-
-// Open the generic app directly for an external (non-Open-Composer) job: fetch
-// the job's batch script and metadata, then navigate to the configured reload
-// app (conf "external_reload_app") with the script content and header fields
-// (script location, script name, job name) preloaded via sessionStorage.
-ocHistory.openExternalJob = function(jobId, cluster, link) {
-  if (!jobId) return;
-
-  var base       = window.location.pathname.replace(/\/history$/, '');
-  var detailsUrl = base + '/job_details?jobId=' + encodeURIComponent(jobId);
-  if (cluster) detailsUrl += '&cluster=' + encodeURIComponent(cluster);
-  var formData   = new URLSearchParams({ cluster: cluster || '' });
-
-  var restore = null;
-  if (link) {
-    if (link.dataset.origText === undefined) link.dataset.origText = link.textContent;
-    link.textContent = 'Opening…';
-    link.style.pointerEvents = 'none';
-    restore = function() { link.textContent = link.dataset.origText || 'Job'; link.style.pointerEvents = ''; };
-  }
-
-  Promise.all([
-    fetch(detailsUrl).then(function(r) { return r.json(); }),
-    fetch(base + '/history/save_external_script', { method: 'POST', body: formData }).then(function(r) { return r.json(); })
-  ]).then(function(results) {
-    var details = results[0] || {};
-    var target  = results[1] || {};
-    if (!target.url) {
-      if (restore) restore();
-      alert('Error: ' + (target.error || 'Could not resolve the target application.'));
-      return;
-    }
-    if (details.error) {
-      if (restore) restore();
-      alert('Could not load job details: ' + details.error);
-      return;
-    }
-    var data          = details.data || {};
-    var scriptContent = details.script_content || '';
-    if (!scriptContent) {
-      // The batch script may be unavailable (job still running, or no longer
-      // retained in accounting). Let the user decide whether to continue.
-      if (!window.confirm('The batch script for this job could not be retrieved (it may still be running, or is no longer retained in accounting). Open the generic app with the header fields prefilled but an empty script editor?')) {
-        if (restore) restore();
-        return;
-      }
-    }
-    var payload = {
-      script:         scriptContent,
-      scriptLocation: details.script_location || '',
-      scriptName:     details.script_name || '',
-      jobName:        data.JobName || ''
-    };
-    var key = '_oc_ext_' + Date.now();
-    sessionStorage.setItem(key, JSON.stringify(payload));
-    var sep = target.url.indexOf('?') >= 0 ? '&' : '?';
-    window.location.href = target.url + sep + 'ocExtLoad=' + encodeURIComponent(key);
-  }).catch(function(e) {
-    if (restore) restore();
-    alert('Error: ' + e.message);
-  });
-};
-
-// Delegate clicks on external-job "script name" links in the History table.
-document.addEventListener('click', function(e) {
-  var link = e.target && e.target.closest ? e.target.closest('.oc-ext-job-link') : null;
-  if (!link) return;
-  e.preventDefault();
-  ocHistory.openExternalJob(link.dataset.jobId, link.dataset.cluster, link);
-});
 
 // Escape HTML special characters for safe DOM insertion.
 ocHistory.escapeHtml = function(text) {
@@ -424,6 +355,8 @@ ocHistory.loadJobDetails = function(modalEl) {
 };
 
 // Fetch batch script via sacct -B and populate the Job Script modal.
+// Also stashes script_location, script_name, and JobName as data-attributes on
+// the modal body so that loadExtScript can prefill the form header fields.
 ocHistory.loadJobScript = function(modalEl) {
   const body = modalEl.querySelector('.modal-body[data-script-job-id]');
   if (!body || body.dataset.loaded === 'true') return;
@@ -438,6 +371,10 @@ ocHistory.loadJobScript = function(modalEl) {
     .then(r => r.json())
     .then(data => {
       body.dataset.loaded = 'true';
+      // Stash metadata for loadExtScript to use when "Load parameters" is clicked.
+      if (data.script_location) body.dataset.extScriptLocation = data.script_location;
+      if (data.script_name)     body.dataset.extScriptName     = data.script_name;
+      if (data.data && data.data.JobName) body.dataset.extJobName = data.data.JobName;
       if (data.script_content) {
         body.innerHTML = `<pre class="mb-0 p-2" style="white-space: pre-wrap;">${ocHistory.escapeHtml(data.script_content)}</pre>`;
       } else {
