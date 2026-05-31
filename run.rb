@@ -394,6 +394,26 @@ def check_overwrite_warning?(content)
   !!raw_value
 end
 
+# Returns the directory where user templates are stored.
+def templates_dir(conf)
+  File.join(conf["data_dir"], "templates")
+end
+
+# Load all user-saved templates from the templates directory.
+def load_templates(conf)
+  dir = templates_dir(conf)
+  return [] unless Dir.exist?(dir)
+  Dir.glob(File.join(dir, "*.yml")).filter_map do |path|
+    begin
+      yaml = YAML.safe_load(File.read(path))
+      next unless yaml.is_a?(Hash) && yaml["name"]
+      { "slug" => File.basename(path, ".yml"), "name" => yaml["name"], "description" => yaml["description"].to_s }
+    rescue
+      nil
+    end
+  end.sort_by { |t| t["name"].downcase }
+end
+
 # Create a website of Home, Application, and History.
 def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path = nil)
   @conf          = create_conf
@@ -421,6 +441,7 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
   case @dir_name
   when ""
     @name = "Home"
+    @templates = load_templates(@conf)
     return erb :index
   when "history"
     @name          = "History"
@@ -540,7 +561,21 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
       # Load cache
       @script_content = nil
       @submit_content = nil
-      if params["jobId"] || job_id
+      if params["template"]
+        slug      = params["template"].gsub(/[^a-zA-Z0-9_\-]/, '')
+        tmpl_path = File.join(templates_dir(@conf), "#{slug}.yml")
+        if File.exist?(tmpl_path)
+          begin
+            tmpl  = YAML.safe_load(File.read(tmpl_path))
+            cache = tmpl.is_a?(Hash) ? (tmpl["values"] || {}) : {}
+            replace_with_cache(@header, cache)
+            replace_with_cache(@body["form"], cache)
+            @script_content = escape_html(cache[OC_SCRIPT_CONTENT].to_s) if cache[OC_SCRIPT_CONTENT]
+            @submit_content = escape_html(cache[SUBMIT_CONTENT].to_s) if cache[SUBMIT_CONTENT]
+          rescue
+          end
+        end
+      elsif params["jobId"] || job_id
         cluster_name = if @conf.key?("clusters")
                          params[params["jobId"] ? "cluster" : HEADER_CLUSTER_NAME] || @conf["clusters"].keys.first
                        end
@@ -780,6 +815,43 @@ get "/nodes/data" do
   end
   content_type :json
   { error: error, rows: rows, fetched_at: Time.now.strftime("%H:%M:%S") }.to_json
+end
+
+post "/templates" do
+  conf = create_conf
+  dir  = File.join(conf["data_dir"], "templates")
+  FileUtils.mkdir_p(dir)
+
+  name = params["template_name"].to_s.strip
+  halt 400, "Template name is required." if name.empty?
+
+  slug      = name.downcase.gsub(/[^a-z0-9]+/, '_').gsub(/\A_+|_+\z/, '')
+  slug      = "template" if slug.empty?
+  base_slug = slug
+  i = 1
+  while File.exist?(File.join(dir, "#{slug}.yml"))
+    slug = "#{base_slug}_#{i}"
+    i += 1
+  end
+
+  skip   = %w[template_name template_description splat captures]
+  values = params.reject { |k, _| skip.include?(k) }
+
+  File.write(File.join(dir, "#{slug}.yml"), {
+    "name"        => name,
+    "description" => params["template_description"].to_s.strip,
+    "values"      => values
+  }.to_yaml)
+
+  redirect request.script_name.empty? ? "/" : request.script_name
+end
+
+post "/templates/:slug/delete" do
+  conf = create_conf
+  slug = params["slug"].gsub(/[^a-zA-Z0-9_\-]/, '')
+  path = File.join(conf["data_dir"], "templates", "#{slug}.yml")
+  File.delete(path) if File.exist?(path)
+  redirect request.script_name.empty? ? "/" : request.script_name
 end
 
 get "/*" do

@@ -35,6 +35,39 @@ def get_icon_path(dirname, icon)
 end
 
 helpers do
+  # Create an HTML snippet for a user template card with a delete button.
+  def output_template_thumbnail(slug, name, description)
+    width     = @conf['thumbnail_width']
+    safe_nm   = ERB::Util.h(name)
+    safe_dsc  = ERB::Util.h(description.to_s)
+    enc_slug  = ERB::Util.u(slug)
+    safe_cfm  = name.gsub("\\", "\\\\\\\\").gsub("'", "\\'")
+    desc_html = description.to_s.strip.empty? ? "" :
+      "<div class=\"small text-muted mt-1\" style=\"word-break:break-word;\">#{safe_dsc}</div>"
+
+    <<~HTML
+      <div class="col text-center">
+        <div class="d-flex flex-column h-100 align-items-center position-relative">
+          <form method="post" action="#{@script_name}/templates/#{enc_slug}/delete"
+                class="position-absolute top-0 end-0" style="z-index:5;">
+            <button type="submit" class="btn btn-sm btn-link text-danger p-0 lh-1"
+                    title="Delete template"
+                    onclick="return confirm('Delete template \\'#{safe_cfm}\\'?')">
+              <i class="bi bi-x-circle-fill fs-6"></i>
+            </button>
+          </form>
+          <div class="flex-grow-1 d-flex align-items-center">
+            <a href="#{@script_name}/_generic/slurm?template=#{enc_slug}" class="stretched-link position-relative text-reset">
+              <i class="bi bi-file-earmark-code" style="font-size: #{width}px; width: #{width}px; height: 100px; line-height: 1;"></i>
+            </a>
+          </div>
+          #{safe_nm}
+          #{desc_html}
+        </div>
+      </div>
+    HTML
+  end
+
   # Create an HTML snippet for displaying a thumbnail image.
   # The image source can either be a URL, a bootstrap icon, a fontawesome icon or a local path.
   # If the icon is not provided. a placeholder image is used.
