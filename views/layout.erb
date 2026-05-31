@@ -90,6 +90,16 @@
       body {
         min-width: 768px;
       }
+      /* Sticky footer: keep the footer at the bottom of the viewport when the
+         page content is short, while still flowing below tall content. */
+      #_form_container {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      .footer {
+        margin-top: auto;
+      }
       .ood-logo {
         filter: invert(1) grayscale(100%);
       }
