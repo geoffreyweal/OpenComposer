@@ -1,3 +1,5 @@
+# Open Composer
+
 ## Overview
 
 Open Composer is a web application to generate batch job scripts and submit batch jobs for HPC clusters on [Open OnDemand](https://openondemand.org/).
@@ -8,7 +10,7 @@ interface for creating, previewing, editing, and submitting batch job scripts. I
 supports multiple job schedulers and can be configured for different HPC applications.
 
 - **App type:** Workflow Composer (Jobs category)
-- **Latest release:** [`v2.0.0`](https://github.com/RIKEN-RCCS/OpenComposer/releases/tag/v2.0.0) (see [Changelog](https://github.com/RIKEN-RCCS/OpenComposer/blob/main/CHANGELOG.md))
+- **Latest release:** [`v2.1.0`](https://github.com/RIKEN-RCCS/OpenComposer/releases/tag/v2.1.0) (see [Changelog](CHANGELOG.md))
 - **License:** MIT (see [LICENSE file](https://github.com/RIKEN-RCCS/OpenComposer/blob/main/LICENSE))
 - **Requirements:** Open OnDemand 3.0 or later.
 - **Supported job schedulers:** Slurm, PBS Pro, Grid Engine, Fujitsu TCS
@@ -16,23 +18,29 @@ supports multiple job schedulers and can be configured for different HPC applica
   - Graphical web interface for generating and submitting batch job scripts
   - Multi-scheduler and multi-cluster support
   - Job history page with filtering, status tracking, and job cancellation
+  - One-by-one job cancellation with an animated in-modal progress bar
   - Editable job script preview before submission
   - Configurable application forms via `form.yml`
   - Dynamic form widgets with conditional visibility and validation
   - Support for preprocessing steps via submit sections
   - Customizable per-application headers and labels
   - Path selector widget for file and directory selection
+  - My Templates — save, manage, and reuse form configurations
+  - Nodes page with dynamic GRES columns auto-discovered from the scheduler
   - Bilingual documentation (English and Japanese)
 
 ## Screenshots
 
 ### Home page
+
   <img width="600" style="border: 1px solid #333;" alt="Home" src="https://riken-rccs.github.io/OpenComposer/docs/img/home_page.png">
 
 ### Application page
+
   <img width="600" style="border: 1px solid #333;" alt="Application" src="https://riken-rccs.github.io/OpenComposer/docs/img/application_page.png">
 
 ### History page
+
   <img width="600" style="border: 1px solid #333;" alt="History" src="https://riken-rccs.github.io/OpenComposer/docs/img/history_page.png">
 
 ## Documents
@@ -63,21 +71,20 @@ The following steps assume you have administrator privileges.
 If you do not have administrator privileges, see [Section 4. "Installation by general user" in installation document](https://riken-rccs.github.io/OpenComposer/docs/install.html#general).
 
 ```sh
-$ cd /var/www/ood/apps/sys/
-$ sudo git clone https://github.com/RIKEN-RCCS/OpenComposer.git
-$ cd OpenComposer
-$ sudo cp conf.yml.erb.sample conf.yml.erb
+cd /var/www/ood/apps/sys/
+sudo git clone https://github.com/RIKEN-RCCS/OpenComposer.git
+cd OpenComposer
+sudo cp conf.yml.erb.sample conf.yml.erb
 ```
 
 You need to edit `conf.yml.erb`. For details, see [Section 2. "Setting" in installation manual](https://riken-rccs.github.io/OpenComposer/docs/install.html#setting).
 
 ## Testing
 
-| System      | Site        | Scheduler          | Repository |
-|-------------|-------------|--------------------|------------|
-| Fugaku      | RIKEN RCCS  | Fujitsu TCS, Slurm | https://github.com/RIKEN-RCCS/composer_fugaku     |
-| R-CCS Cloud | RIKEN RCCS  | Slurm              | https://github.com/RIKEN-RCCS/composer_rccs_cloud |
-
+| System      | Site       | Scheduler          | Repository                                                                               |
+|-------------|------------|--------------------|------------------------------------------------------------------------------------------|
+| Fugaku      | RIKEN RCCS | Fujitsu TCS, Slurm | [composer_fugaku](https://github.com/RIKEN-RCCS/composer_fugaku)                         |
+| R-CCS Cloud | RIKEN RCCS | Slurm              | [composer_rccs_cloud](https://github.com/RIKEN-RCCS/composer_rccs_cloud)                 |
 
 ## Contributing
 
@@ -88,11 +95,13 @@ For discussions, see the [GitHub Discussions](https://github.com/RIKEN-RCCS/Open
 For bugs or feature requests, [open an issue](https://github.com/RIKEN-RCCS/OpenComposer/issues) with detailed logs and reproduction steps.
 
 ## Reference
+
 If you use this software in your research or development work, please cite the following publication:
 
-> Masahiro Nakao and Keiji Yamamoto. 2025. ``Open Composer: A Web-Based Application for Generating and Managing Batch Jobs on HPC Clusters''. In Proceedings of the SC '25 Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis (SC Workshops '25). Association for Computing Machinery, New York, NY, USA, 697-704. https://doi.org/10.1145/3731599.3767428
+> Masahiro Nakao and Keiji Yamamoto. 2025. "Open Composer: A Web-Based Application for Generating and Managing Batch Jobs on HPC Clusters". In Proceedings of the SC '25 Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis (SC Workshops '25). ACM, New York, NY, USA, 697-704. [https://doi.org/10.1145/3731599.3767428](https://doi.org/10.1145/3731599.3767428)
 
 ## Presentation
+
 - [HUST: International Workshop on HPC User Support Tools](https://hust-workshop.github.io), St. Louis, USA, Nov. 2025 [[Paper](https://doi.org/10.1145/3731599.3767428)] [[Slide](https://www.mnakao.net/data/2025/HUST2025.pdf)]
 - [SupercomputingAsia 2025](https://sca25.sc-asia.org/), Singapore, Mar. 2025 [[Poster](https://mnakao.net/data/2025/sca.pdf)]
 - [The 197th HPC Research Symposium](https://www.ipsj.or.jp/kenkyukai/event/arc251hpc197.html), Fukuoka, Japan, Dec. 2024 [[Paper](https://mnakao.net/data/2024/HPC197.pdf)] [[Slide](https://mnakao.net/data/2024/HPC197-slide.pdf)] (Japanese)

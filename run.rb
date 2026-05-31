@@ -23,7 +23,7 @@ configure :development do
 end
 
 # Internal Constants
-VERSION                ||= "2.0.0"
+VERSION                ||= "2.1.0"
 SCHEDULERS_DIR_PATH    ||= "./lib/schedulers"
 HISTORY_ROWS           ||= 10
 JOB_STATUS             ||= { "queued" => "QUEUED", "running" => "RUNNING", "completed" => "COMPLETED", "failed" => "FAILED", "cancelled" => "CANCELLED" }
