@@ -457,6 +457,19 @@ if (ocHistory.selectAllCheckbox && ocHistory.tbody) {
     var jobIds = rawIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
     if (jobIds.length === 0) return;
 
+    // Expand bracket-range array jobs: 6801262_[1-1000] → 6801262_1, 6801262_2, ...
+    // Also supports step notation: 6801262_[1-1000:3] → 6801262_1, 6801262_4, ...
+    function expandJobId(id) {
+      var m = id.match(/^(\d+)_\[(\d+)-(\d+)(?::(\d+))?\]$/);
+      if (!m) return [id];
+      var prefix = m[1], start = parseInt(m[2], 10), end = parseInt(m[3], 10);
+      var step   = m[4] ? parseInt(m[4], 10) : 1;
+      var ids = [];
+      for (var n = start; n <= end; n += step) ids.push(prefix + '_' + n);
+      return ids;
+    }
+    jobIds = [].concat.apply([], jobIds.map(expandJobId));
+
     var bsConfirm = bootstrap.Modal.getInstance(confirmModal);
     if (bsConfirm) bsConfirm.hide();
     var bsProgress = new bootstrap.Modal(progressModal);
