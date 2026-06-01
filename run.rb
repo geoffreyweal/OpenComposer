@@ -853,48 +853,33 @@ rescue Exception => e
   { "error" => e.message }.to_json
 end
 
-post "/history/cancel_jobs" do
+post "/history/cancel_one_job" do
+  content_type :json
+
   conf          = create_conf
   cluster_name  = conf.key?("clusters") ? (params["cluster"] || conf["clusters"].keys.first) : nil
   scheduler     = conf.key?("clusters") ? create_scheduler(conf)[cluster_name] : create_scheduler(conf)
-  bin           = conf.key?("clusters") ? conf["bin"][cluster_name]           : conf["bin"]
-  bin_overrides = conf.key?("clusters") ? conf["bin_overrides"][cluster_name] : conf["bin_overrides"]
-  ssh_wrapper   = conf.key?("clusters") ? conf["ssh_wrapper"][cluster_name]   : conf["ssh_wrapper"]
-  history_db    = conf.key?("clusters") ? conf["history_db"][cluster_name]    : conf["history_db"]
+  bin           = conf.key?("clusters") ? conf["bin"][cluster_name]            : conf["bin"]
+  bin_overrides = conf.key?("clusters") ? conf["bin_overrides"][cluster_name]  : conf["bin_overrides"]
+  ssh_wrapper   = conf.key?("clusters") ? conf["ssh_wrapper"][cluster_name]    : conf["ssh_wrapper"]
+  history_db    = conf.key?("clusters") ? conf["history_db"][cluster_name]     : conf["history_db"]
 
-  job_ids = params["job_ids"].to_s.split(",").map(&:strip).reject(&:empty?)
-  total   = job_ids.size
+  job_id = params["job_id"].to_s.strip
+  return { success: false, error: "No job_id provided" }.to_json if job_id.empty?
 
-  db = (history_db && File.exist?(history_db.to_s)) \
-    ? open_history_db(conf, conf.key?("clusters") ? cluster_name : nil) \
-    : nil
+  error = scheduler.cancel([job_id], bin, bin_overrides, ssh_wrapper)
 
-  content_type "text/event-stream"
-  headers "Cache-Control" => "no-cache", "X-Accel-Buffering" => "no"
-
-  stream(:keep_open) do |out|
-    cancelled = 0
-    errors    = []
-
-    job_ids.each do |job_id|
-      error = scheduler.cancel([job_id], bin, bin_overrides, ssh_wrapper)
-      if error
-        errors << job_id
-      else
-        cancelled += 1
-        begin
-          db.transaction { mark_jobs_as_canceled(db, [job_id]) } if db
-        rescue => _e
-          # DB write failed — non-fatal
-        end
-      end
-      out << "data: #{JSON.generate({ n: cancelled, total: total, current: job_id, error: error })}\n\n"
+  unless error
+    begin
+      db = (history_db && File.exist?(history_db.to_s)) \
+        ? open_history_db(conf, conf.key?("clusters") ? cluster_name : nil) \
+        : nil
+      db.transaction { mark_jobs_as_canceled(db, [job_id]) } if db
+    rescue => _e
     end
-
-    output_log("Cancel job", scheduler, cluster: cluster_name, job_ids: job_ids)
-    out << "data: #{JSON.generate({ done: true, cancelled: cancelled, total: total, errors: errors })}\n\n"
-    out.close
   end
+
+  { success: error.nil?, error: error }.to_json
 end
 
 get "/nodes/data" do

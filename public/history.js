@@ -432,8 +432,8 @@ if (ocHistory.selectAllCheckbox && ocHistory.tbody) {
   });
 }
 
-// Progressive job cancellation: streams server-sent events one job at a time
-// so a large cancel (e.g. array ranges) never times out and the UI shows a live progress bar.
+// Cancel jobs one at a time: POST /history/cancel_one_job for each job ID,
+// update the progress bar after each response.
 (function() {
   var confirmModal  = document.getElementById('_historyCancelJob');
   var progressModal = document.getElementById('_historyCancelProgress');
@@ -442,7 +442,6 @@ if (ocHistory.selectAllCheckbox && ocHistory.tbody) {
   var cancelForm = document.getElementById('_historyCancelJobForm');
   if (!cancelForm) return;
 
-  // Reload the history page when the progress modal is dismissed so statuses refresh.
   progressModal.addEventListener('hidden.bs.modal', function() {
     window.location.reload();
   });
@@ -452,10 +451,12 @@ if (ocHistory.selectAllCheckbox && ocHistory.tbody) {
 
     var cancelUrl = confirmModal.getAttribute('data-cancel-url');
     var jobIdsEl  = document.getElementById('_historyCancelJobInput');
-    var jobIds    = jobIdsEl ? jobIdsEl.value : '';
-    if (!cancelUrl || !jobIds.trim()) return;
+    var rawIds    = jobIdsEl ? jobIdsEl.value : '';
+    if (!cancelUrl || !rawIds.trim()) return;
 
-    // Swap confirmation modal for progress modal.
+    var jobIds = rawIds.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    if (jobIds.length === 0) return;
+
     var bsConfirm = bootstrap.Modal.getInstance(confirmModal);
     if (bsConfirm) bsConfirm.hide();
     var bsProgress = new bootstrap.Modal(progressModal);
@@ -467,89 +468,68 @@ if (ocHistory.selectAllCheckbox && ocHistory.tbody) {
     var stopBtn  = document.getElementById('_historyCancelStop');
     var closeBtn = document.getElementById('_historyCancelClose');
 
-    var abortController = new AbortController();
+    var stopped   = false;
+    var cancelled = 0;
+    var errors    = [];
+
     if (stopBtn) {
       stopBtn.disabled = false;
-      stopBtn.onclick = function() { abortController.abort(); };
+      stopBtn.classList.remove('d-none');
+      stopBtn.onclick = function() { stopped = true; };
     }
+    if (closeBtn) closeBtn.classList.add('d-none');
 
-    function updateProgress(n, total, current, err) {
-      var pct = total > 0 ? Math.round((n / total) * 100) : 0;
+    function updateBar(done) {
+      var pct = Math.round((done / jobIds.length) * 100);
       if (bar) {
         bar.style.width = pct + '%';
         bar.setAttribute('aria-valuenow', pct);
         bar.textContent = pct + '%';
       }
-      if (countEl) countEl.textContent = n + ' / ' + total + ' cancelled';
-      if (jobEl) {
-        var msg = 'Cancelling: ' + ocHistory.escapeHtml(String(current));
-        if (err) msg += ' <span class="text-warning fw-bold">(failed)</span>';
-        jobEl.innerHTML = msg;
-      }
     }
 
-    function finalize(cancelled, total, errIds) {
+    function finish() {
+      updateBar(jobIds.length);
       if (bar) {
-        bar.style.width = '100%';
-        bar.setAttribute('aria-valuenow', 100);
-        bar.textContent = '100%';
         bar.classList.remove('progress-bar-animated', 'bg-warning');
-        bar.classList.add(errIds.length > 0 ? 'bg-warning' : 'bg-success');
+        bar.classList.add(errors.length > 0 ? 'bg-warning' : 'bg-success');
       }
       if (jobEl) {
-        jobEl.textContent = errIds.length > 0
-          ? 'Done — ' + errIds.length + ' job(s) could not be cancelled'
-          : 'Done';
+        jobEl.textContent = stopped
+          ? 'Stopped.'
+          : (errors.length > 0 ? 'Done — ' + errors.length + ' job(s) could not be cancelled' : 'Done');
       }
-      if (countEl) countEl.textContent = cancelled + ' / ' + total + ' cancelled';
+      if (countEl) countEl.textContent = cancelled + ' / ' + jobIds.length + ' cancelled';
       if (stopBtn)  stopBtn.classList.add('d-none');
       if (closeBtn) closeBtn.classList.remove('d-none');
     }
 
-    var formData = new FormData();
-    formData.append('job_ids', jobIds);
+    function cancelNext(i) {
+      if (i >= jobIds.length || stopped) {
+        finish();
+        return;
+      }
 
-    fetch(cancelUrl, { method: 'POST', body: formData, signal: abortController.signal })
-      .then(function(response) {
-        if (!response.ok || !response.body) throw new Error('Server error ' + response.status);
-        var reader  = response.body.getReader();
-        var decoder = new TextDecoder();
-        var buffer  = '';
+      var jobId = jobIds[i];
+      if (jobEl) jobEl.textContent = 'Cancelling: ' + jobId;
+      if (countEl) countEl.textContent = i + ' / ' + jobIds.length + ' done';
+      updateBar(i);
 
-        function pump() {
-          return reader.read().then(function(chunk) {
-            if (chunk.done) return;
-            buffer += decoder.decode(chunk.value, { stream: true });
-            var lines = buffer.split('\n');
-            buffer = lines.pop();
-            lines.forEach(function(line) {
-              if (line.slice(0, 6) !== 'data: ') return;
-              try {
-                var evt = JSON.parse(line.slice(6));
-                if (evt.done) {
-                  finalize(evt.cancelled, evt.total, evt.errors || []);
-                } else {
-                  updateProgress(evt.n, evt.total, evt.current, evt.error);
-                }
-              } catch (_) {}
-            });
-            return pump();
-          });
-        }
-        return pump();
-      })
-      .catch(function(err) {
-        if (err.name === 'AbortError') {
-          if (bar) {
-            bar.classList.remove('progress-bar-animated', 'bg-warning');
-            bar.classList.add('bg-secondary');
-          }
-          if (jobEl) jobEl.textContent = 'Stopped.';
-        } else {
-          if (jobEl) jobEl.textContent = 'Error: ' + (err.message || 'unknown');
-        }
-        if (stopBtn)  stopBtn.classList.add('d-none');
-        if (closeBtn) closeBtn.classList.remove('d-none');
-      });
+      var formData = new FormData();
+      formData.append('job_id', jobId);
+
+      fetch(cancelUrl, { method: 'POST', body: formData })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.success) { cancelled++; } else { errors.push(jobId); }
+          cancelNext(i + 1);
+        })
+        .catch(function() {
+          errors.push(jobId);
+          cancelNext(i + 1);
+        });
+    }
+
+    cancelNext(0);
   });
 })();

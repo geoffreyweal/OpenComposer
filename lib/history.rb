@@ -34,8 +34,8 @@ helpers do
 
     extra_attrs = if action == "CancelJob"
       cancel_url = @cluster_name \
-        ? "#{@script_name}/history/cancel_jobs?cluster=#{URI.encode_www_form_component(@cluster_name.to_s)}" \
-        : "#{@script_name}/history/cancel_jobs"
+        ? "#{@script_name}/history/cancel_one_job?cluster=#{URI.encode_www_form_component(@cluster_name.to_s)}" \
+        : "#{@script_name}/history/cancel_one_job"
       " data-cancel-url=\"#{escape_html(cancel_url)}\""
     else
       ""
