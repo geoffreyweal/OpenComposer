@@ -432,6 +432,22 @@ if (ocHistory.selectAllCheckbox && ocHistory.tbody) {
   });
 }
 
+// Expand a bracket-range job ID into individual task IDs.
+// "6801262_[1589-2000]"   → ["6801262_1589", ..., "6801262_2000"]
+// "6801262_[1589-2000:3]" → ["6801262_1589", "6801262_1592", ...]
+// Any other ID is returned unchanged in a one-element array.
+ocHistory.expandJobRange = function(jobId) {
+  var m = jobId.match(/^(\d+)_\[(\d+)-(\d+)(?::(\d+))?\]$/);
+  if (!m) return [jobId];
+  var parent = m[1];
+  var first  = parseInt(m[2], 10);
+  var last   = parseInt(m[3], 10);
+  var step   = m[4] ? Math.max(parseInt(m[4], 10), 1) : 1;
+  var ids    = [];
+  for (var i = first; i <= last; i += step) { ids.push(parent + '_' + i); }
+  return ids;
+};
+
 // Cancel jobs one-by-one, showing a progress bar in the CancelJob modal.
 ocHistory.cancelJobsOneByOne = async function(jobIds, cluster) {
   var modal  = document.getElementById('_historyCancelJob');
@@ -464,7 +480,13 @@ ocHistory.cancelJobsOneByOne = async function(jobIds, cluster) {
     if (statusEl) statusEl.textContent = 'Cancelling ' + jobId + '…';
 
     try {
-      var fd = new URLSearchParams({ jobId: jobId });
+      var expanded = ocHistory.expandJobRange(jobId);
+      var fd = new URLSearchParams();
+      if (expanded.length > 1) {
+        fd.set('jobIds', expanded.join(','));
+      } else {
+        fd.set('jobId', jobId);
+      }
       if (cluster) fd.set('cluster', cluster);
       var r    = await fetch(base + '/history/cancel_one', { method: 'POST', body: fd });
       var data = await r.json();
