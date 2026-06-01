@@ -48,9 +48,13 @@ class Slurm < Scheduler
   end
 
   # Cancel one or more jobs in the Slurm scheduler using the 'scancel' command.
+  # Bracket-range IDs like "6801262_[1494-2000]" or "6801262_[1494-2000:2]" are
+  # expanded to individual task IDs because not all Slurm versions accept that
+  # notation in scancel.
   def cancel(jobs, bin = nil, bin_overrides = nil, ssh_wrapper = nil)
-    scancel = get_command_path("scancel", bin, bin_overrides)
-    command = [ssh_wrapper, scancel, jobs.join(',')].compact.join(" ")
+    scancel  = get_command_path("scancel", bin, bin_overrides)
+    expanded = jobs.flat_map { |j| expand_array_range(j) }
+    command  = [ssh_wrapper, scancel, expanded.join(' ')].compact.join(" ")
     stdout, stderr, status = Open3.capture3(command)
     return status.success? ? nil : [stdout, stderr].join(" ")
   rescue Exception => e
@@ -340,5 +344,21 @@ class Slurm < Scheduler
     content.strip.empty? ? [nil, nil] : [content, nil]
   rescue Exception => e
     return nil, e.message
+  end
+
+  private
+
+  # Expand a bracket-range job ID into individual task IDs.
+  # "6801262_[1494-2000]"   → ["6801262_1494", ..., "6801262_2000"]
+  # "6801262_[1494-2000:2]" → ["6801262_1494", "6801262_1496", ..., "6801262_2000"]
+  # Any other string is returned unchanged inside a one-element array.
+  def expand_array_range(job_id)
+    m = job_id.to_s.match(/\A(\d+)_\[(\d+)-(\d+)(?::(\d+))?\]\z/)
+    return [job_id] unless m
+    parent = m[1]
+    first  = m[2].to_i
+    last   = m[3].to_i
+    step   = m[4] ? [m[4].to_i, 1].max : 1
+    first.step(last, step).map { |i| "#{parent}_#{i}" }
   end
 end
