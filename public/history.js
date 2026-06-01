@@ -1,5 +1,10 @@
 var ocHistory = ocHistory || {};
 
+ocHistory.showLoading = function() {
+  var el = document.getElementById('_historyLoadingBar');
+  if (el) el.style.display = 'block';
+};
+
 // Apply filter based on the input value and update URL query parameters.
 ocHistory.applyFilter = function() {
   const filterInput = document.getElementById('_filterInput');
@@ -64,6 +69,7 @@ ocHistory.applyFilter = function() {
     urlParams.set('detail_open', 'true');
   }
 
+  ocHistory.showLoading();
   window.location.href = `${window.location.pathname}?${urlParams.toString()}`;
 };
 
@@ -207,6 +213,7 @@ ocHistory.redirectWithRows = function() {
 
   params.delete('p');
   params.set('rows', selectedValue);
+  ocHistory.showLoading();
   window.location.href = url.toString();
 };
 
@@ -223,10 +230,18 @@ document.querySelectorAll('input[name="_historyCluster"]').forEach(radio => {
       url.searchParams.set('detail_open', 'true');
     }
 
+    ocHistory.showLoading();
     window.location.href = url.toString();
   });
 });
 
+// Show the loading bar on sort-link and pagination-link clicks.
+document.addEventListener('click', function(e) {
+  var link = e.target.closest('.history-sort-link, nav .page-item:not(.active):not(.disabled) .page-link');
+  if (link && link.getAttribute('href') && link.getAttribute('href') !== '#') {
+    ocHistory.showLoading();
+  }
+});
 
 // When the browser restores this page from bfcache (user pressed Back), re-enable
 // any Load-parameters buttons that were disabled before navigation.
@@ -238,57 +253,6 @@ window.addEventListener('pageshow', function(event) {
     });
   }
 });
-
-// Load the script from a "Job Script (Slurm - Generic)" modal into the target
-// app via sessionStorage, prefilling the script editor and all three header
-// fields (Script location, Script name, Job name) from the metadata stashed by
-// loadJobScript.
-ocHistory.loadExtScript = function(btn) {
-  var modal = btn.closest('.modal');
-  if (!modal) return;
-  var body = modal.querySelector('.modal-body[data-script-job-id]');
-  if (!body) return;
-
-  // Wait until loadJobScript has finished (whether the script was available or not).
-  // Without this guard the button click is silently ignored while the spinner is running.
-  if (body.dataset.loaded !== 'true') return;
-
-  var pre = body.querySelector('pre');
-  var scriptContent = pre ? pre.textContent : '';
-
-  var cluster  = body.dataset.cluster || '';
-  var base     = window.location.pathname.replace(/\/history$/, '');
-  var formData = new URLSearchParams({ cluster: cluster });
-
-  btn.disabled    = true;
-  btn.textContent = 'Loading…';
-
-  fetch(base + '/history/save_external_script', { method: 'POST', body: formData })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.url) {
-        var payload = {
-          script:         scriptContent,
-          scriptLocation: body.dataset.extScriptLocation || '',
-          scriptName:     body.dataset.extScriptName     || '',
-          jobName:        body.dataset.extJobName        || ''
-        };
-        var key = '_oc_ext_' + Date.now();
-        sessionStorage.setItem(key, JSON.stringify(payload));
-        var sep = data.url.indexOf('?') >= 0 ? '&' : '?';
-        window.location.href = data.url + sep + 'ocExtLoad=' + encodeURIComponent(key);
-      } else {
-        alert('Error: ' + (data.error || 'Unknown error'));
-        btn.disabled    = false;
-        btn.textContent = 'Load parameters';
-      }
-    })
-    .catch(function(e) {
-      alert('Error: ' + e.message);
-      btn.disabled    = false;
-      btn.textContent = 'Load parameters';
-    });
-};
 
 // Escape HTML special characters for safe DOM insertion.
 ocHistory.escapeHtml = function(text) {
@@ -358,8 +322,6 @@ ocHistory.loadJobDetails = function(modalEl) {
 };
 
 // Fetch batch script via sacct -B and populate the Job Script modal.
-// Also stashes script_location, script_name, and JobName as data-attributes on
-// the modal body so that loadExtScript can prefill the form header fields.
 ocHistory.loadJobScript = function(modalEl) {
   const body = modalEl.querySelector('.modal-body[data-script-job-id]');
   if (!body || body.dataset.loaded === 'true') return;
@@ -374,7 +336,6 @@ ocHistory.loadJobScript = function(modalEl) {
     .then(r => r.json())
     .then(data => {
       body.dataset.loaded = 'true';
-      // Stash metadata for loadExtScript to use when "Load parameters" is clicked.
       if (data.script_location) body.dataset.extScriptLocation = data.script_location;
       if (data.script_name)     body.dataset.extScriptName     = data.script_name;
       if (data.data && data.data.JobName) body.dataset.extJobName = data.data.JobName;
@@ -390,47 +351,179 @@ ocHistory.loadJobScript = function(modalEl) {
     });
 };
 
-// Attach lazy-load listeners to Job Details modals.
-document.querySelectorAll('[id^="_historyJobId"]').forEach(function(el) {
-  el.addEventListener('show.bs.modal', function() {
-    ocHistory.loadJobDetails(this);
-  });
-});
+// Load the script from a modal into the target app via sessionStorage.
+ocHistory.loadExtScript = function(btn) {
+  var modal = btn.closest('.modal');
+  if (!modal) return;
+  var body = modal.querySelector('.modal-body[data-script-job-id]');
+  if (!body) return;
 
-// Attach lazy-load listeners to Job Script modals (when script content is missing from DB).
-document.querySelectorAll('[id^="_historyJobScript"]').forEach(function(el) {
-  el.addEventListener('show.bs.modal', function() {
-    ocHistory.loadJobScript(this);
-  });
-});
+  if (body.dataset.loaded !== 'true') return;
 
-// Handle "Select All" checkbox functionality.
-ocHistory.selectAllCheckbox = document.getElementById('_historySelectAll');
-ocHistory.tbody = document.getElementById('_historyTbody');
+  var pre = body.querySelector('pre');
+  var scriptContent = pre ? pre.textContent : '';
 
-if (ocHistory.selectAllCheckbox && ocHistory.tbody) {
-  const rows = Array.from(ocHistory.tbody.getElementsByTagName('tr'));
+  var cluster  = body.dataset.cluster || '';
+  var base     = window.location.pathname.replace(/\/history$/, '');
+  var formData = new URLSearchParams({ cluster: cluster });
 
-  // Event listener for the "Select All" checkbox.
-  ocHistory.selectAllCheckbox.addEventListener('change', function() {
-    const isChecked = this.checked;
-    rows.forEach(row => {
-      const checkbox = row.querySelector('td input[type="checkbox"]');
-      if (checkbox) checkbox.checked = isChecked;
+  btn.disabled    = true;
+  btn.textContent = 'Loading…';
+
+  fetch(base + '/history/save_external_script', { method: 'POST', body: formData })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.url) {
+        var payload = {
+          script:         scriptContent,
+          scriptLocation: body.dataset.extScriptLocation || '',
+          scriptName:     body.dataset.extScriptName     || '',
+          jobName:        body.dataset.extJobName        || ''
+        };
+        var key = '_oc_ext_' + Date.now();
+        sessionStorage.setItem(key, JSON.stringify(payload));
+        var sep = data.url.indexOf('?') >= 0 ? '&' : '?';
+        window.location.href = data.url + sep + 'ocExtLoad=' + encodeURIComponent(key);
+      } else {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        btn.disabled    = false;
+        btn.textContent = 'Load parameters';
+      }
+    })
+    .catch(function(e) {
+      alert('Error: ' + e.message);
+      btn.disabled    = false;
+      btn.textContent = 'Load parameters';
     });
-    ocHistory.updateBatch(rows);
-  });
+};
 
-  // Event listener for individual row checkboxes.
-  rows.forEach(row => {
-    const checkbox = row.querySelector('td input[type="checkbox"]');
-    if (checkbox) {
-      checkbox.addEventListener('change', function() {
-        ocHistory.updateBatch(rows);
-      });
+// Context for the shared batch script modal (_historyExtBatchScript).
+ocHistory._extScript = { jobId: '', workDir: '', scriptName: '', cluster: '', content: null, loadUrl: null };
+
+// Populate and show the shared batch script modal for a job.
+ocHistory.loadBatchScript = function(jobId, url, workDir, scriptName, cluster, loadUrl) {
+  ocHistory._extScript = { jobId: jobId, workDir: workDir || '', scriptName: scriptName || '', cluster: cluster || '', content: null, loadUrl: loadUrl || null };
+
+  var titleEl = document.getElementById('_historyExtBatchScriptJobId');
+  var bodyEl  = document.getElementById('_historyExtBatchScriptBody');
+  var copyBtn = document.getElementById('_historyExtBatchScriptCopy');
+  var loadBtn = document.getElementById('_historyExtBatchScriptLoad');
+  if (titleEl) titleEl.textContent = jobId;
+  if (bodyEl)  bodyEl.textContent  = 'Loading…';
+  if (copyBtn) copyBtn.disabled = true;
+  if (loadBtn) loadBtn.disabled = true;
+
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!bodyEl) return;
+      if (data.error) {
+        bodyEl.textContent = 'Error: ' + data.error;
+      } else if (data.script === null || data.script === undefined) {
+        bodyEl.textContent = 'No script available.';
+        if (loadUrl && loadBtn) loadBtn.disabled = false;
+      } else {
+        bodyEl.textContent = data.script;
+        ocHistory._extScript.content = data.script;
+        if (copyBtn) copyBtn.disabled = false;
+        if (loadBtn) loadBtn.disabled = false;
+      }
+    })
+    .catch(function(e) {
+      if (bodyEl) bodyEl.textContent = 'Error: ' + e.message;
+    });
+};
+
+ocHistory.copyBatchScript = function() {
+  var bodyEl  = document.getElementById('_historyExtBatchScriptBody');
+  var copyBtn = document.getElementById('_historyExtBatchScriptCopy');
+  if (!bodyEl || !navigator.clipboard) return;
+  navigator.clipboard.writeText(bodyEl.textContent).then(function() {
+    if (copyBtn) {
+      var orig = copyBtn.textContent;
+      copyBtn.textContent = 'Copied!';
+      setTimeout(function() { copyBtn.textContent = orig; }, 1500);
     }
   });
-}
+};
+
+// Called after the async table HTML is injected into _historyTableContainer.
+// Attaches modal listeners and checkbox logic that depend on the table DOM.
+ocHistory.initTable = function() {
+  document.querySelectorAll('[id^="_historyJobId"]').forEach(function(el) {
+    el.addEventListener('show.bs.modal', function() {
+      ocHistory.loadJobDetails(this);
+    });
+  });
+
+  document.querySelectorAll('[id^="_historyJobScript"]').forEach(function(el) {
+    el.addEventListener('show.bs.modal', function() {
+      ocHistory.loadJobScript(this);
+    });
+  });
+
+  var selectAll = document.getElementById('_historySelectAll');
+  var tbody     = document.getElementById('_historyTbody');
+  if (selectAll && tbody) {
+    var rows = Array.from(tbody.getElementsByTagName('tr'));
+
+    selectAll.addEventListener('change', function() {
+      var isChecked = this.checked;
+      rows.forEach(function(row) {
+        var checkbox = row.querySelector('td input[type="checkbox"]');
+        if (checkbox) checkbox.checked = isChecked;
+      });
+      ocHistory.updateBatch(rows);
+    });
+
+    rows.forEach(function(row) {
+      var checkbox = row.querySelector('td input[type="checkbox"]');
+      if (checkbox) {
+        checkbox.addEventListener('change', function() {
+          ocHistory.updateBatch(rows);
+        });
+      }
+    });
+  }
+};
+
+// Delete job info via fetch so the modal lifecycle stays clean.
+(function() {
+  var deleteModal = document.getElementById('_historyDeleteInfo');
+  if (!deleteModal) return;
+
+  var deleteForm = document.getElementById('_historyDeleteInfoForm');
+  if (!deleteForm) return;
+
+  deleteForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    var jobIdsEl = document.getElementById('_historyDeleteInfoInput');
+    var jobIds   = jobIdsEl ? jobIdsEl.value : '';
+    if (!jobIds.trim()) return;
+
+    var bsModal = bootstrap.Modal.getInstance(deleteModal);
+    if (bsModal) bsModal.hide();
+
+    var scriptName = deleteModal.getAttribute('data-script-name') || '';
+    var cluster    = deleteModal.getAttribute('data-cluster') || '';
+    var deleteUrl  = scriptName + '/history/delete_jobs' + (cluster ? '?cluster=' + encodeURIComponent(cluster) : '');
+
+    var formData = new FormData();
+    formData.append('job_ids', jobIds);
+
+    fetch(deleteUrl, { method: 'POST', body: formData })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) alert('Delete failed: ' + data.error);
+        window.location.reload();
+      })
+      .catch(function(err) {
+        alert('Delete failed: ' + err.message);
+        window.location.reload();
+      });
+  });
+})();
 
 // Cancel jobs one at a time: POST /history/cancel_one_job for each job ID,
 // update the progress bar after each response.

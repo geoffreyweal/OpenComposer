@@ -488,70 +488,19 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
     @templates = load_templates(@conf)
     return erb :index
   when "history"
-    @name          = "History"
-    @scheduler     = create_scheduler(@conf)
-    @bin           = @conf["bin"]
-    @bin_overrides = @conf["bin_overrides"]
-    @ssh_wrapper   = @conf["ssh_wrapper"]
-    @error_msg     = update_status(@conf, @scheduler, @bin, @bin_overrides, @ssh_wrapper, @cluster_name)
-    return erb :error if @error_msg != nil
-
-    @statuses     = parse_history_statuses(params["statuses"])
-    @filter       = escape_html(params["filter"])
-    @filter_column = parse_history_filter_column(params["filter_column"], @conf)
-    @sort         = parse_history_sort(params["sort"], @conf)
-    @order        = parse_history_order(params["order"])
+    @name                = "History"
+    @statuses            = parse_history_statuses(params["statuses"])
+    @filter              = escape_html(params["filter"])
+    @filter_column       = parse_history_filter_column(params["filter_column"], @conf)
+    @sort                = parse_history_sort(params["sort"], @conf)
+    @order               = parse_history_order(params["order"])
     @date_range, raw_date_from, raw_date_to = parse_history_date_range(params["date_range"], params["date_from"], params["date_to"])
-    @date_from    = escape_html(raw_date_from)
-    @date_to      = escape_html(raw_date_to)
-    @filter_mode  = escape_html(params["filter_mode"] || "and")
-    @detail_open  = escape_html(params["detail_open"] || "false")
-    requested_rows = [(params["rows"] || HISTORY_ROWS).to_i, 1].max
-    @current_page = (params["p"] || 1).to_i
-    offset = (@current_page - 1) * requested_rows
-
-    # Effective dates: default to last 7 days when no range is specified
-    effective_from = raw_date_from.to_s.empty? ? (Date.today - 6).strftime("%Y-%m-%d") : raw_date_from.to_s
-    effective_to   = raw_date_to.to_s.empty?   ? Date.today.strftime("%Y-%m-%d")       : raw_date_to.to_s
-    @using_sacct_default_dates = raw_date_from.to_s.empty? && raw_date_to.to_s.empty?
-
-    # Fetch all sacct jobs for the effective date range
-    scheduler_s     = @conf.key?("clusters") ? @scheduler[@cluster_name]        : @scheduler
-    bin_s           = @conf.key?("clusters") ? @bin[@cluster_name]               : @bin
-    bin_overrides_s = @conf.key?("clusters") ? @bin_overrides[@cluster_name]     : @bin_overrides
-    ssh_wrapper_s   = @conf.key?("clusters") ? @ssh_wrapper[@cluster_name]       : @ssh_wrapper
-    sacct_raw, @sacct_error, @sacct_command = scheduler_s.sacct_all_jobs(
-      effective_from, effective_to, bin_s, bin_overrides_s, ssh_wrapper_s
-    )
-
-    # Fetch estimated start times from squeue --start for any pending jobs.
-    # Use deduplicated base job IDs (strip _N suffix) to avoid flooding squeue
-    # with thousands of individual array task IDs.
-    pending_base_ids = (sacct_raw || [])
-      .select { |j| j["State"].to_s.start_with?("PENDING") }
-      .map    { |j| j["JobID"].to_s.split("_").first }
-      .uniq
-      .reject(&:empty?)
-    squeue_starts, _ = pending_base_ids.empty? ? [{}, nil] : scheduler_s.squeue_start_times(pending_base_ids, bin_s, bin_overrides_s, ssh_wrapper_s)
-    squeue_starts ||= {}
-
-    history_search_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    @jobs, @jobs_size = get_combined_jobs_page(
-      @conf, @cluster_name, sacct_raw, @statuses, @filter, @filter_column,
-      @filter_mode, effective_from, effective_to, @sort, @order, requested_rows, offset,
-      squeue_starts: squeue_starts
-    )
-    @history_search_elapsed_seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - history_search_started_at
-    @rows         = [requested_rows, @jobs_size].min
-    @page_size    = (@rows == 0) ? 1 : ((@jobs_size - 1) / @rows) + 1
-    @start_index  = @jobs_size == 0 ? 0 : (@current_page - 1) * @rows
-    @end_index    = @jobs_size == 0 ? 0 : [@current_page * @rows, @jobs_size].min - 1
-    @error_msg    = error_msg
-
+    @date_from           = escape_html(raw_date_from)
+    @date_to             = escape_html(raw_date_to)
+    @filter_mode         = escape_html(params["filter_mode"] || "and")
+    @detail_open         = escape_html(params["detail_open"] || "false")
     @filter_column_items = history_filter_column_items(@conf)
-    @date_range_items = history_date_range_items
-    @history_search_elapsed_label = format("%.3f", @history_search_elapsed_seconds || 0.0)
-
+    @date_range_items    = history_date_range_items
     return erb :history
   when "nodes"
     @name = "Nodes"
@@ -880,6 +829,113 @@ post "/history/cancel_one_job" do
   end
 
   { success: error.nil?, error: error }.to_json
+end
+
+get "/history/table" do
+  conf          = create_conf
+  @conf         = conf
+  @script_name  = request.script_name
+  @my_ood_url   = request.base_url
+  @apps_dir     = conf["apps_dir"]
+  cluster_name  = if conf.key?("clusters")
+                    escape_html(params["cluster"] || conf["clusters"].keys.first)
+                  else
+                    nil
+                  end
+  @cluster_name = cluster_name
+  @login_node   = conf.key?("clusters") ? conf["login_node"][cluster_name] : conf["login_node"]
+  scheduler     = create_scheduler(conf)
+  bin           = conf["bin"]
+  bin_overrides = conf["bin_overrides"]
+  ssh_wrapper   = conf["ssh_wrapper"]
+
+  error = update_status(conf, scheduler, bin, bin_overrides, ssh_wrapper, cluster_name)
+  if error
+    @error_msg = error
+    content_type :html
+    next erb :history_table, layout: false
+  end
+
+  @statuses       = parse_history_statuses(params["statuses"])
+  @filter         = escape_html(params["filter"])
+  @filter_column  = parse_history_filter_column(params["filter_column"], conf)
+  @sort           = parse_history_sort(params["sort"], conf)
+  @order          = parse_history_order(params["order"])
+  @date_range, raw_date_from, raw_date_to = parse_history_date_range(params["date_range"], params["date_from"], params["date_to"])
+  @date_from      = escape_html(raw_date_from)
+  @date_to        = escape_html(raw_date_to)
+  @filter_mode    = escape_html(params["filter_mode"] || "and")
+  @detail_open    = escape_html(params["detail_open"] || "false")
+  requested_rows  = [(params["rows"] || HISTORY_ROWS).to_i, 1].max
+  @current_page   = (params["p"] || 1).to_i
+  offset          = (@current_page - 1) * requested_rows
+
+  effective_from = raw_date_from.to_s.empty? ? (Date.today - 6).strftime("%Y-%m-%d") : raw_date_from.to_s
+  effective_to   = raw_date_to.to_s.empty?   ? Date.today.strftime("%Y-%m-%d")       : raw_date_to.to_s
+  @using_sacct_default_dates = raw_date_from.to_s.empty? && raw_date_to.to_s.empty?
+
+  scheduler_s     = conf.key?("clusters") ? scheduler[cluster_name]        : scheduler
+  bin_s           = conf.key?("clusters") ? bin[cluster_name]               : bin
+  bin_overrides_s = conf.key?("clusters") ? bin_overrides[cluster_name]     : bin_overrides
+  ssh_wrapper_s   = conf.key?("clusters") ? ssh_wrapper[cluster_name]       : ssh_wrapper
+
+  sacct_raw, @sacct_error, _ = scheduler_s.sacct_all_jobs(
+    effective_from, effective_to, bin_s, bin_overrides_s, ssh_wrapper_s
+  )
+
+  pending_base_ids = (sacct_raw || [])
+    .select { |j| j["State"].to_s.start_with?("PENDING") }
+    .map    { |j| j["JobID"].to_s.split("_").first }
+    .uniq
+    .reject(&:empty?)
+  squeue_starts, _ = pending_base_ids.empty? ? [{}, nil] : scheduler_s.squeue_start_times(pending_base_ids, bin_s, bin_overrides_s, ssh_wrapper_s)
+  squeue_starts ||= {}
+
+  t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  @jobs, @jobs_size = get_combined_jobs_page(
+    conf, cluster_name, sacct_raw, @statuses, @filter, @filter_column,
+    @filter_mode, effective_from, effective_to, @sort, @order, requested_rows, offset,
+    squeue_starts: squeue_starts
+  )
+  @history_search_elapsed_seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - t0
+  @rows        = [requested_rows, @jobs_size].min
+  @page_size   = (@rows == 0) ? 1 : ((@jobs_size - 1) / @rows) + 1
+  @start_index = @jobs_size == 0 ? 0 : (@current_page - 1) * @rows
+  @end_index   = @jobs_size == 0 ? 0 : [@current_page * @rows, @jobs_size].min - 1
+  @history_search_elapsed_label = format("%.3f", @history_search_elapsed_seconds || 0.0)
+  @filter_column_items = history_filter_column_items(conf)
+
+  content_type :html
+  erb :history_table, layout: false
+end
+
+post "/history/delete_jobs" do
+  content_type :json
+
+  conf         = create_conf
+  cluster_name = conf.key?("clusters") ? (params["cluster"] || conf["clusters"].keys.first) : nil
+  history_db   = conf.key?("clusters") ? conf["history_db"][cluster_name] : conf["history_db"]
+  scheduler    = conf.key?("clusters") ? create_scheduler(conf)[cluster_name] : create_scheduler(conf)
+
+  job_ids = params["job_ids"].to_s.split(",").map(&:strip).reject(&:empty?)
+  next({ error: "No job IDs provided." }.to_json) if job_ids.empty?
+
+  begin
+    db = open_history_db(conf, conf.key?("clusters") ? cluster_name : nil)
+    db.transaction do
+      job_ids.each do |job_id|
+        if find_job(db, job_id)
+          delete_job(db, job_id)
+        else
+          mark_generic_job_deleted(db, job_id)
+        end
+      end
+    end
+    output_log("Delete job information", scheduler, cluster: cluster_name, job_ids: job_ids)
+    { ok: true }.to_json
+  rescue => e
+    { error: e.message }.to_json
+  end
 end
 
 get "/nodes/data" do

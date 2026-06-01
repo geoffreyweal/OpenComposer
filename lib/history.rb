@@ -32,13 +32,16 @@ helpers do
     id = "_history#{action}"
     form_action = history_path_with_query
 
+    script_attr  = " data-script-name=\"#{escape_html(@script_name.to_s)}\""
+    cluster_attr = @cluster_name ? " data-cluster=\"#{escape_html(@cluster_name.to_s)}\"" : ""
+
     extra_attrs = if action == "CancelJob"
       cancel_url = @cluster_name \
         ? "#{@script_name}/history/cancel_one_job?cluster=#{URI.encode_www_form_component(@cluster_name.to_s)}" \
         : "#{@script_name}/history/cancel_one_job"
-      " data-cancel-url=\"#{escape_html(cancel_url)}\""
+      "#{script_attr}#{cluster_attr} data-cancel-url=\"#{escape_html(cancel_url)}\""
     else
-      ""
+      "#{script_attr}#{cluster_attr}"
     end
 
     <<~HTML
@@ -67,7 +70,7 @@ helpers do
     return if action != "CancelJob" && action != "DeleteInfo"
 
     <<~HTML
-    <button id="_history#{action}Badge" data-bs-toggle="modal" data-bs-target="#_history#{action}" class="btn btn-sm disabled" style="background-color:#{@conf['history_action_color']};border-color:#{@conf['history_action_color']};color:#fff;" disabled>
+    <button id="_history#{action}Badge" data-bs-toggle="modal" data-bs-target="#_history#{action}" class="btn btn-sm btn-primary disabled" disabled>
       #{(action == "CancelJob") ? "Cancel Job" : "Delete Info"}
       <span id="_history#{action}Count" class="badge bg-secondary">0</span>
     </button>
@@ -1285,6 +1288,21 @@ helpers do
     sacct_map = {}
     (sacct_jobs || []).each { |j| sacct_map[j["JobID"]] = j }
 
+    # Expand bracket-range entries (e.g. 6801262_[1546-2000:3]) into individual task IDs.
+    # Individual sacct entries always win; range-expanded entries fill in the gaps.
+    expanded_sacct = {}
+    sacct_map.each do |job_id, info|
+      m = job_id.to_s.match(/\A(\d+)_\[(\d+)-(\d+)(?::(\d+))?\]\z/)
+      if m
+        prefix, start, fin = m[1], m[2].to_i, m[3].to_i
+        step = m[4] ? m[4].to_i : 1
+        start.step(fin, step) { |i| expanded_sacct["#{prefix}_#{i}"] ||= info }
+      else
+        expanded_sacct[job_id] = info
+      end
+    end
+    sacct_map = expanded_sacct
+
     db = open_history_db(conf, cluster_name)
     db_map = {}
     each_job(db) do |row|
@@ -1295,17 +1313,8 @@ helpers do
 
     deleted_generic = get_deleted_generic_job_ids(db)
 
-    # Build parent_id → ranges mapping so individual tasks covered by a sacct range
-    # entry (e.g. "6800213_[465-2000]") can be suppressed from the table.
-    array_ranges = {}
-    sacct_map.each_key do |job_id|
-      next unless job_id.to_s =~ /\A(\d+)_\[(\d+)-(\d+)(?::\d+)?\]\z/
-      array_ranges[$1] ||= []
-      array_ranges[$1] << [$2.to_i, $3.to_i]
-    end
-
-    # Build parent_id → db_job so range entries can inherit app/script info from
-    # a sibling individual task that was submitted through OC.
+    # Build parent_id → db_job so sacct-only tasks can inherit app/script info from
+    # a sibling task that was submitted through OC.
     parent_db_map = {}
     db_map.each do |job_id, db_job|
       next unless job_id.to_s =~ /\A(\d+)_(\d+)\z/
@@ -1317,18 +1326,12 @@ helpers do
     filter_text = CGI.unescapeHTML(filter.to_s).downcase
 
     all_ids.filter_map do |job_id|
-      # Suppress individual array tasks whose index falls within a sacct range entry.
-      if job_id.to_s =~ /\A(\d+)_(\d+)\z/
-        parent_id, task_idx = $1, $2.to_i
-        next if array_ranges[parent_id]&.any? { |rs, re| task_idx >= rs && task_idx <= re }
-      end
-
       next if deleted_generic.include?(job_id) && db_map[job_id].nil?
 
-      # For a range entry with no direct DB record, inherit app/script info from a
-      # sibling task so it shows the correct application name instead of "Generic".
-      resolved_db_job = if db_map[job_id].nil? && job_id.to_s =~ /\A(\d+)_\[/
-                          parent_db_map[$1]
+      # For tasks with no direct DB record, inherit app/script info from a sibling.
+      resolved_db_job = if db_map[job_id].nil?
+                          parent_id = job_id.to_s =~ /\A(\d+)_/ ? $1 : nil
+                          parent_id ? parent_db_map[parent_id] : nil
                         else
                           db_map[job_id]
                         end
