@@ -32,8 +32,17 @@ helpers do
     id = "_history#{action}"
     form_action = history_path_with_query
 
+    extra_attrs = if action == "CancelJob"
+      cancel_url = @cluster_name \
+        ? "#{@script_name}/history/cancel_jobs?cluster=#{URI.encode_www_form_component(@cluster_name.to_s)}" \
+        : "#{@script_name}/history/cancel_jobs"
+      " data-cancel-url=\"#{escape_html(cancel_url)}\""
+    else
+      ""
+    end
+
     <<~HTML
-    <div class="modal" id="#{id}" aria-hidden="true" tabindex="-1">
+    <div class="modal" id="#{id}" aria-hidden="true" tabindex="-1"#{extra_attrs}>
       <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
           <div class="modal-body" id="#{id}Body">

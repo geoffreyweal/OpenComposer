@@ -853,15 +853,8 @@ rescue Exception => e
   { "error" => e.message }.to_json
 end
 
-post "/history/cancel_one" do
-  conf    = create_conf
-  # Accept "jobIds" (comma-separated expanded task IDs) or legacy "jobId" (single).
-  raw     = params["jobIds"] || params["jobId"]
-  job_ids = raw.to_s.strip.split(',').map(&:strip).reject(&:empty?)
-  content_type :json
-  return JSON.generate({ ok: false, error: "No job ID" }) if job_ids.empty?
-  return JSON.generate({ ok: false, error: "Invalid job ID" }) unless job_ids.all? { |j| j.match?(/\A[\d_.]+\z/) }
-
+post "/history/cancel_jobs" do
+  conf          = create_conf
   cluster_name  = conf.key?("clusters") ? (params["cluster"] || conf["clusters"].keys.first) : nil
   scheduler     = conf.key?("clusters") ? create_scheduler(conf)[cluster_name] : create_scheduler(conf)
   bin           = conf.key?("clusters") ? conf["bin"][cluster_name]           : conf["bin"]
@@ -869,20 +862,39 @@ post "/history/cancel_one" do
   ssh_wrapper   = conf.key?("clusters") ? conf["ssh_wrapper"][cluster_name]   : conf["ssh_wrapper"]
   history_db    = conf.key?("clusters") ? conf["history_db"][cluster_name]    : conf["history_db"]
 
-  error_msg = scheduler.cancel(job_ids, bin, bin_overrides, ssh_wrapper)
-  if error_msg.nil?
-    if history_db && File.exist?(history_db.to_s)
-      db = open_history_db(conf, conf.key?("clusters") ? cluster_name : nil)
-      db.transaction { mark_jobs_as_canceled(db, job_ids) }
+  job_ids = params["job_ids"].to_s.split(",").map(&:strip).reject(&:empty?)
+  total   = job_ids.size
+
+  db = (history_db && File.exist?(history_db.to_s)) \
+    ? open_history_db(conf, conf.key?("clusters") ? cluster_name : nil) \
+    : nil
+
+  content_type "text/event-stream"
+  headers "Cache-Control" => "no-cache", "X-Accel-Buffering" => "no"
+
+  stream(:keep_open) do |out|
+    cancelled = 0
+    errors    = []
+
+    job_ids.each do |job_id|
+      error = scheduler.cancel([job_id], bin, bin_overrides, ssh_wrapper)
+      if error
+        errors << job_id
+      else
+        cancelled += 1
+        begin
+          db.transaction { mark_jobs_as_canceled(db, [job_id]) } if db
+        rescue => _e
+          # DB write failed — non-fatal
+        end
+      end
+      out << "data: #{JSON.generate({ n: cancelled, total: total, current: job_id, error: error })}\n\n"
     end
+
     output_log("Cancel job", scheduler, cluster: cluster_name, job_ids: job_ids)
-    JSON.generate({ ok: true })
-  else
-    JSON.generate({ ok: false, error: error_msg.to_s })
+    out << "data: #{JSON.generate({ done: true, cancelled: cancelled, total: total, errors: errors })}\n\n"
+    out.close
   end
-rescue => e
-  content_type :json
-  JSON.generate({ ok: false, error: e.message })
 end
 
 get "/nodes/data" do

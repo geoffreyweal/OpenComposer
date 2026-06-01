@@ -432,115 +432,124 @@ if (ocHistory.selectAllCheckbox && ocHistory.tbody) {
   });
 }
 
-// Expand a bracket-range job ID into individual task IDs.
-// "6801262_[1589-2000]"   → ["6801262_1589", ..., "6801262_2000"]
-// "6801262_[1589-2000:3]" → ["6801262_1589", "6801262_1592", ...]
-// Any other ID is returned unchanged in a one-element array.
-ocHistory.expandJobRange = function(jobId) {
-  var m = jobId.match(/^(\d+)_\[(\d+)-(\d+)(?::(\d+))?\]$/);
-  if (!m) return [jobId];
-  var parent = m[1];
-  var first  = parseInt(m[2], 10);
-  var last   = parseInt(m[3], 10);
-  var step   = m[4] ? Math.max(parseInt(m[4], 10), 1) : 1;
-  var ids    = [];
-  for (var i = first; i <= last; i += step) { ids.push(parent + '_' + i); }
-  return ids;
-};
+// Progressive job cancellation: streams server-sent events one job at a time
+// so a large cancel (e.g. array ranges) never times out and the UI shows a live progress bar.
+(function() {
+  var confirmModal  = document.getElementById('_historyCancelJob');
+  var progressModal = document.getElementById('_historyCancelProgress');
+  if (!confirmModal || !progressModal) return;
 
-// Cancel jobs one-by-one, showing a progress bar in the CancelJob modal.
-ocHistory.cancelJobsOneByOne = async function(jobIds, cluster) {
-  var modal  = document.getElementById('_historyCancelJob');
-  var body   = document.getElementById('_historyCancelJobBody');
-  if (!modal || !body) return;
+  var cancelForm = document.getElementById('_historyCancelJobForm');
+  if (!cancelForm) return;
 
-  var total  = jobIds.length;
-  var done   = 0;
-  var errors = [];
-
-  body.innerHTML =
-    '<div class="mb-2">Cancelling ' + total + ' job' + (total !== 1 ? 's' : '') + '...</div>' +
-    '<div class="progress mb-2" style="height:1.4rem;">' +
-      '<div id="_ocCancelBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary"' +
-           ' role="progressbar" style="width:0%;min-width:2.5rem;"' +
-           ' aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">' +
-        '0 / ' + total +
-      '</div>' +
-    '</div>' +
-    '<div id="_ocCancelStatus" class="small text-muted"></div>';
-
-  var footer = modal.querySelector('.modal-footer');
-  if (footer) footer.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
-
-  var base = window.location.pathname.replace(/\/history$/, '');
-
-  for (var i = 0; i < jobIds.length; i++) {
-    var jobId    = jobIds[i];
-    var statusEl = document.getElementById('_ocCancelStatus');
-    if (statusEl) statusEl.textContent = 'Cancelling ' + jobId + '…';
-
-    try {
-      var expanded = ocHistory.expandJobRange(jobId);
-      var fd = new URLSearchParams();
-      if (expanded.length > 1) {
-        fd.set('jobIds', expanded.join(','));
-      } else {
-        fd.set('jobId', jobId);
-      }
-      if (cluster) fd.set('cluster', cluster);
-      var r    = await fetch(base + '/history/cancel_one', { method: 'POST', body: fd });
-      var data = await r.json();
-      if (!data.ok) errors.push(jobId + ': ' + (data.error || 'Unknown error'));
-    } catch (e) {
-      errors.push(jobId + ': ' + e.message);
-    }
-
-    done++;
-    var pct = Math.round((done / total) * 100);
-    var bar = document.getElementById('_ocCancelBar');
-    if (bar) {
-      bar.style.width = pct + '%';
-      bar.textContent = done + ' / ' + total;
-      bar.setAttribute('aria-valuenow', pct);
-    }
-  }
-
-  var bar      = document.getElementById('_ocCancelBar');
-  var statusEl = document.getElementById('_ocCancelStatus');
-  if (errors.length === 0) {
-    if (bar) { bar.classList.remove('progress-bar-animated', 'bg-primary'); bar.classList.add('bg-success'); }
-    if (statusEl) statusEl.innerHTML = '<span class="text-success fw-semibold">All jobs cancelled successfully.</span>';
-    setTimeout(function() { window.location.reload(); }, 1000);
-  } else {
-    if (bar) { bar.classList.remove('progress-bar-animated', 'bg-primary'); bar.classList.add('bg-warning'); }
-    if (statusEl) {
-      statusEl.innerHTML = '<span class="text-danger fw-semibold">Errors occurred:</span>' +
-        '<ul class="mb-0 mt-1">' +
-        errors.map(function(e) { return '<li>' + ocHistory.escapeHtml(e) + '</li>'; }).join('') +
-        '</ul>';
-    }
-    if (footer) footer.querySelectorAll('button[data-bs-dismiss]').forEach(function(b) { b.disabled = false; });
-  }
-};
-
-// Re-enable all footer buttons when the modal opens so a previous failed cancel
-// run (which disables buttons) never leaves OK permanently un-clickable.
-var _ocCancelModal = document.getElementById('_historyCancelJob');
-if (_ocCancelModal) {
-  _ocCancelModal.addEventListener('show.bs.modal', function() {
-    var footer = this.querySelector('.modal-footer');
-    if (footer) footer.querySelectorAll('button').forEach(function(b) { b.disabled = false; });
+  // Reload the history page when the progress modal is dismissed so statuses refresh.
+  progressModal.addEventListener('hidden.bs.modal', function() {
+    window.location.reload();
   });
-}
 
-var _ocCancelForm = document.getElementById('_historyCancelJobForm');
-if (_ocCancelForm) {
-  _ocCancelForm.addEventListener('submit', function(e) {
+  cancelForm.addEventListener('submit', function(e) {
     e.preventDefault();
-    var input  = document.getElementById('_historyCancelJobInput');
-    var jobIds = (input && input.value) ? input.value.split(',').filter(Boolean) : [];
-    if (!jobIds.length) return;
-    var cluster = new URLSearchParams(window.location.search).get('cluster');
-    ocHistory.cancelJobsOneByOne(jobIds, cluster);
+
+    var cancelUrl = confirmModal.getAttribute('data-cancel-url');
+    var jobIdsEl  = document.getElementById('_historyCancelJobInput');
+    var jobIds    = jobIdsEl ? jobIdsEl.value : '';
+    if (!cancelUrl || !jobIds.trim()) return;
+
+    // Swap confirmation modal for progress modal.
+    var bsConfirm = bootstrap.Modal.getInstance(confirmModal);
+    if (bsConfirm) bsConfirm.hide();
+    var bsProgress = new bootstrap.Modal(progressModal);
+    bsProgress.show();
+
+    var jobEl    = document.getElementById('_historyCancelProgressJob');
+    var bar      = document.getElementById('_historyCancelProgressBar');
+    var countEl  = document.getElementById('_historyCancelProgressCount');
+    var stopBtn  = document.getElementById('_historyCancelStop');
+    var closeBtn = document.getElementById('_historyCancelClose');
+
+    var abortController = new AbortController();
+    if (stopBtn) {
+      stopBtn.disabled = false;
+      stopBtn.onclick = function() { abortController.abort(); };
+    }
+
+    function updateProgress(n, total, current, err) {
+      var pct = total > 0 ? Math.round((n / total) * 100) : 0;
+      if (bar) {
+        bar.style.width = pct + '%';
+        bar.setAttribute('aria-valuenow', pct);
+        bar.textContent = pct + '%';
+      }
+      if (countEl) countEl.textContent = n + ' / ' + total + ' cancelled';
+      if (jobEl) {
+        var msg = 'Cancelling: ' + ocHistory.escapeHtml(String(current));
+        if (err) msg += ' <span class="text-warning fw-bold">(failed)</span>';
+        jobEl.innerHTML = msg;
+      }
+    }
+
+    function finalize(cancelled, total, errIds) {
+      if (bar) {
+        bar.style.width = '100%';
+        bar.setAttribute('aria-valuenow', 100);
+        bar.textContent = '100%';
+        bar.classList.remove('progress-bar-animated', 'bg-warning');
+        bar.classList.add(errIds.length > 0 ? 'bg-warning' : 'bg-success');
+      }
+      if (jobEl) {
+        jobEl.textContent = errIds.length > 0
+          ? 'Done — ' + errIds.length + ' job(s) could not be cancelled'
+          : 'Done';
+      }
+      if (countEl) countEl.textContent = cancelled + ' / ' + total + ' cancelled';
+      if (stopBtn)  stopBtn.classList.add('d-none');
+      if (closeBtn) closeBtn.classList.remove('d-none');
+    }
+
+    var formData = new FormData();
+    formData.append('job_ids', jobIds);
+
+    fetch(cancelUrl, { method: 'POST', body: formData, signal: abortController.signal })
+      .then(function(response) {
+        if (!response.ok || !response.body) throw new Error('Server error ' + response.status);
+        var reader  = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer  = '';
+
+        function pump() {
+          return reader.read().then(function(chunk) {
+            if (chunk.done) return;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var lines = buffer.split('\n');
+            buffer = lines.pop();
+            lines.forEach(function(line) {
+              if (line.slice(0, 6) !== 'data: ') return;
+              try {
+                var evt = JSON.parse(line.slice(6));
+                if (evt.done) {
+                  finalize(evt.cancelled, evt.total, evt.errors || []);
+                } else {
+                  updateProgress(evt.n, evt.total, evt.current, evt.error);
+                }
+              } catch (_) {}
+            });
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function(err) {
+        if (err.name === 'AbortError') {
+          if (bar) {
+            bar.classList.remove('progress-bar-animated', 'bg-warning');
+            bar.classList.add('bg-secondary');
+          }
+          if (jobEl) jobEl.textContent = 'Stopped.';
+        } else {
+          if (jobEl) jobEl.textContent = 'Error: ' + (err.message || 'unknown');
+        }
+        if (stopBtn)  stopBtn.classList.add('d-none');
+        if (closeBtn) closeBtn.classList.remove('d-none');
+      });
   });
-}
+})();
