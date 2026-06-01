@@ -501,6 +501,16 @@ ocHistory.cancelJobsOneByOne = async function(jobIds, cluster) {
   }
 };
 
+// Re-enable all footer buttons when the modal opens so a previous failed cancel
+// run (which disables buttons) never leaves OK permanently un-clickable.
+var _ocCancelModal = document.getElementById('_historyCancelJob');
+if (_ocCancelModal) {
+  _ocCancelModal.addEventListener('show.bs.modal', function() {
+    var footer = this.querySelector('.modal-footer');
+    if (footer) footer.querySelectorAll('button').forEach(function(b) { b.disabled = false; });
+  });
+}
+
 var _ocCancelForm = document.getElementById('_historyCancelJobForm');
 if (_ocCancelForm) {
   _ocCancelForm.addEventListener('submit', function(e) {
