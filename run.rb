@@ -423,6 +423,41 @@ def load_templates(conf)
   end.sort_by { |t| t["name"].downcase }
 end
 
+# Compact an array of scheduler job IDs into range notation for display.
+# e.g. ["6801262_1", ..., "6801262_449"] → "6801262_[1-449:1]"
+def compact_job_ids(ids)
+  return ids.to_s unless ids.is_a?(Array)
+  return ids[0].to_s if ids.size == 1
+
+  groups = {}
+  ungrouped = []
+  ids.each do |id|
+    if id.to_s =~ /\A(\d+)_(\d+)\z/
+      groups[$1] ||= []
+      groups[$1] << $2.to_i
+    else
+      ungrouped << id.to_s
+    end
+  end
+
+  parts = ungrouped.dup
+  groups.sort_by { |parent, _| parent.to_i }.each do |parent, indices|
+    sorted = indices.sort
+    if sorted.size == 1
+      parts << "#{parent}_#{sorted[0]}"
+    else
+      step = sorted[1] - sorted[0]
+      if sorted.each_cons(2).all? { |a, b| b - a == step }
+        parts << "#{parent}_[#{sorted.first}-#{sorted.last}:#{step}]"
+      else
+        sorted.each { |i| parts << "#{parent}_#{i}" }
+      end
+    end
+  end
+
+  parts.join(", ")
+end
+
 # Create a website of Home, Application, and History.
 def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path = nil)
   @conf          = create_conf
@@ -648,7 +683,7 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
                         "Script Content"
                       end
 
-      @job_id    = job_id.is_a?(Array) ? job_id.join(", ") : job_id
+      @job_id    = compact_job_ids(job_id)
       @error_msg = error_msg&.force_encoding('UTF-8')
       @script_path = script_path
       return erb :form

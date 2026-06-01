@@ -26,9 +26,19 @@ class Slurm < Scheduler
     unless stdout.include?("ArrayTaskId") # Single Job
       return job_id, nil
     else
-      # Extract and expand array job IDs
-      expanded_ids = stdout.scan(/ArrayTaskId=(\S+)/).flatten.flat_map do |part|
-        part.include?('-') ? Range.new(*part.split('-').map(&:to_i)).to_a : [part.to_i]
+      # Extract and expand array job IDs.
+      # ArrayTaskId can be "1-100", "1-1000:40", "1-1000:40%2" (% = concurrency limit), or "1,5,10".
+      expanded_ids = stdout.scan(/ArrayTaskId=(\S+)/).flatten.flat_map do |spec|
+        spec.split('%').first.split(',').flat_map do |part|
+          if part.include?('-')
+            range_part, step_part = part.split(':', 2)
+            start_val, end_val = range_part.split('-', 2).map(&:to_i)
+            step = step_part ? [step_part.to_i, 1].max : 1
+            start_val.step(end_val, step).to_a
+          else
+            [part.to_i]
+          end
+        end
       end.sort
       return expanded_ids.map { |i| "#{job_id}_#{i}" }, nil # Array Job
     end
