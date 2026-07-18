@@ -189,6 +189,14 @@ def create_all_manifests(apps_dir)
   return all_manifests.compact
 end
 
+# Build a natural-sort key so that numeric prefixes/segments are ordered by
+# value rather than lexically (e.g. "10_App" sorts after "2_App", not before).
+# Digit runs become integers and are compared against a sentinel so that a
+# number always sorts before text at the same position.
+def natural_sort_key(str)
+  str.to_s.downcase.scan(/\d+|\D+/).map { |s| s =~ /\A\d/ ? [0, s.to_i, ""] : [1, 0, s] }
+end
+
 # Replace with cached value.
 def replace_with_cache(form, cache)
   form.each do |key, value|
@@ -315,7 +323,7 @@ def show_website(job_id = nil, error_msg = nil, error_params = nil, script_path 
 
   @ood_logo_path = URI.join(@my_ood_url, @script_name + "/", "ood.png")
   @current_path  = File.join(@script_name, @dir_name)
-  @manifests     = create_all_manifests(@apps_dir).sort_by { |m| [(m.category || "").downcase, m.name.downcase] }
+  @manifests     = create_all_manifests(@apps_dir).sort_by { |m| [natural_sort_key(m.category || ""), natural_sort_key(m.name)] }
   @manifests_w_category, @manifests_wo_category = @manifests.partition(&:category)
 
   case @dir_name

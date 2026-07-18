@@ -73,11 +73,11 @@ You need to edit `conf.yml.erb`. For details, see [Section 2. "Setting" in insta
 
 ## Testing
 
-| System      | Site        | Scheduler          | Repository |
-|-------------|-------------|--------------------|------------|
+| System      | Site        | Scheduler          | Repository                                        |
+|-------------|-------------|--------------------|---------------------------------------------------|
 | Fugaku      | RIKEN RCCS  | Fujitsu TCS, Slurm | https://github.com/RIKEN-RCCS/composer_fugaku     |
 | R-CCS Cloud | RIKEN RCCS  | Slurm              | https://github.com/RIKEN-RCCS/composer_rccs_cloud |
-
+| RIKYU       | RIKEN RCCS  | Slurm              | https://github.com/RIKEN-RCCS/composer_rikyu      |
 
 ## Contributing
 

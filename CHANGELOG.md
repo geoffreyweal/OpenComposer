@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+### Add
+- Support the Dynamic Form Widget in `multi_select` widgets.
+- Add smoke tests (`misc/tests/run_tests.rb`) that build every form.yml sample in the documentation and `sample_apps/`.
+
+### Changed
+- Sort applications on the index page using natural order, so numeric prefixes such as `10_App` sort after `2_App` instead of before.
+
 ## [2.0.1] - 2026-07-10
 ### Add
 - Allow custom values to be entered in multi_select widgets, in addition to the predefined suggestions.

@@ -23,7 +23,8 @@
         <li class="nav-item"><a href="#registor" class="nav-link">3. Open OnDemandへの登録</a></li>
         <li class="nav-item"><a href="#general" class="nav-link">4. 一般ユーザによるインストール</a></li>
         <li class="nav-item"><a href="#local" class="nav-link">5. ローカルにおける開発方法</a></li>
-        <li class="nav-item"><a href="#jobscheduler" class="nav-link">6. ジョブスケジューラの追加</a></li>
+        <li class="nav-item"><a href="#test" class="nav-link">6. テスト</a></li>
+        <li class="nav-item"><a href="#jobscheduler" class="nav-link">7. ジョブスケジューラの追加</a></li>
       </ul>
     </nav>
 
@@ -255,7 +256,31 @@ $ RACK_ENV=development bundle exec rackup</pre>
         Webブラウザで<code>http://localhost:9292</code>にアクセスしてください。なお、ジョブ投入が行えないなどの制限があります。
       </p>
 
-      <h2 id="jobscheduler">6. ジョブスケジューラの追加</h2>
+      <h2 id="test">6. テスト</h2>
+      <p>
+        <code>misc/tests/run_tests.rb</code>は、ドキュメントとサンプルアプリケーションの全<code>form.yml</code>が正しく処理できることを確認するスモークテストです。下記のように実行します。
+      </p>
+      <pre>$ ruby misc/tests/run_tests.rb</pre>
+      <p>
+        このテストは、まず<code>misc/tests/extract_samples.rb</code>を実行して<code>docs/application.html</code>中の全<code>form.yml</code>サンプルを<code>misc/tests/samples/</code>以下に抽出します。ドキュメントを正としているため、<code>samples/</code>は実行のたびに再生成され、テストは常に最新のドキュメントを反映します。続いて、抽出したサンプルと<code>sample_apps/</code>以下の各アプリケーションを<code>lib/form.rb</code>のフォーム生成処理に通し、下記を確認します。
+      </p>
+      <ol>
+        <li>YAML（またはERB + YAML）がパースできること</li>
+        <li><code>form</code>セクションが<code>run.rb</code>と同じ検証を通ること</li>
+        <li>HTMLの生成が例外を起こさず、空でないこと</li>
+        <li>すべてのウィジットのキーが、生成されたHTML中に要素のidとして現れること</li>
+        <li>生成されたJavaScriptの構文が正しいこと（<code>node --check</code>を使用。<code>node</code>が無い場合はスキップ）</li>
+      </ol>
+      <p>
+        すべてのサンプルが成功すると、終了コード0で下記のように出力されます。失敗した場合は、そのサンプル名と原因が表示され、終了コードは1になります。
+      </p>
+      <pre>----------------------------------------
+42/42 samples passed</pre>
+      <p>
+        これらはスモークテストであり、すべてのサンプルがエラーなく生成できることを保証しますが、ブラウザ上での挙動（ウィジットを操作してDynamic Form Widgetの効果を確認するなど）は対象外です。その部分は実際のブラウザで確認してください。
+      </p>
+
+      <h2 id="jobscheduler">7. ジョブスケジューラの追加</h2>
       <p>
         ジョブスケジューラを追加したい場合、スーパークラスSchedulerが定義された<code>lib/scheduler.rb</code>を参考にして、<code>lib/schedulers/</code>以下にジョブスケジューラのためのRubyスクリプトを作成してください。下記のPBS Pro（<code>lib/schedulers/pbspro.rb</code>）のようにSchedulerクラスを継承してください。ジョブを投入する<code>submit()</code>メソッド、ジョブをキャンセルする<code>cancel()</code>メソッド、ジョブの情報を問い合わせる<code>query()</code>メソッドを定義する必要があります。
       </p>
