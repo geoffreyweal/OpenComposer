@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [2.0.2] - 2026-07-27
 ### Add
 - Support the Dynamic Form Widget in `multi_select` widgets.
 - Add smoke tests (`misc/tests/run_tests.rb`) that build every form.yml sample in the documentation and `sample_apps/`.
