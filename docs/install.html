@@ -23,7 +23,8 @@
         <li class="nav-item"><a href="#registor" class="nav-link">3. Registration</a></li>
         <li class="nav-item"><a href="#general" class="nav-link">4. Installation by general user</a></li>
         <li class="nav-item"><a href="#local" class="nav-link">5. Local Development</a></li>
-        <li class="nav-item"><a href="#jobscheduler" class="nav-link">6. Adding a job scheduler</a></li>
+        <li class="nav-item"><a href="#test" class="nav-link">6. Testing</a></li>
+        <li class="nav-item"><a href="#jobscheduler" class="nav-link">7. Adding a job scheduler</a></li>
       </ul>
     </nav>
 
@@ -269,7 +270,31 @@ $ RACK_ENV=development bundle exec rackup</pre>
         Note that there are restrictions, such as the inability to submit jobs.
       </p>
 
-      <h2 id="jobscheduler">6. Adding a Job Scheduler</h2>
+      <h2 id="test">6. Testing</h2>
+      <p>
+        <code>misc/tests/run_tests.rb</code> is a smoke test that verifies every <code>form.yml</code> in the documentation and the sample applications is processed correctly. Run it as follows:
+      </p>
+      <pre>$ ruby misc/tests/run_tests.rb</pre>
+      <p>
+        The test first runs <code>misc/tests/extract_samples.rb</code>, which extracts every <code>form.yml</code> sample from <code>docs/application.html</code> into <code>misc/tests/samples/</code>. The documentation is the source of truth: <code>samples/</code> is regenerated on every run, so the test always reflects the current documentation. It then runs each extracted sample and each application under <code>sample_apps/</code> through the form generators in <code>lib/form.rb</code> and checks that:
+      </p>
+      <ol>
+        <li>the YAML (or ERB + YAML) parses,</li>
+        <li>the <code>form</code> section passes the same validations as <code>run.rb</code>,</li>
+        <li>HTML generation raises no exception and is non-empty,</li>
+        <li>every widget key appears as an element id in the generated HTML,</li>
+        <li>the generated JavaScript is syntactically valid (using <code>node --check</code>; skipped if <code>node</code> is not installed).</li>
+      </ol>
+      <p>
+        If all samples pass, it exits with code 0 and prints the following. If any sample fails, its name and cause are shown and the exit code is 1.
+      </p>
+      <pre>----------------------------------------
+42/42 samples passed</pre>
+      <p>
+        These are smoke tests: they guarantee that every sample builds without errors, but they do not cover browser-side behavior (such as operating a widget and observing the effect of the Dynamic Form Widget). Verify that layer in a real browser.
+      </p>
+
+      <h2 id="jobscheduler">7. Adding a Job Scheduler</h2>
       <p>
         If you want to add a job scheduler, create a Ruby script for the job scheduler under <code>lib/schedulers/</code> using the superclass Scheduler defined in <code>lib/scheduler.rb</code> as a reference. Inherit the Scheduler class as shown in the PBS Pro example below (<code>lib/schedulers/pbspro.rb</code>).
   You must define the <code>submit()</code> method for submitting a job, the <code>cancel()</code> method for canceling a job, and the <code>query()</code> method for querying job information.

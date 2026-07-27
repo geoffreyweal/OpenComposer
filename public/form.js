@@ -202,7 +202,10 @@ ocForm.checkSubmitState = function(id) {
 }
 
 // Add a selected item to the display inputs.
-ocForm.addSelectedItem = function(id) {
+// triggerDynamic controls whether the Dynamic Form Widget is re-evaluated after
+// the item is added. User actions pass true; programmatic set-value cascades pass
+// false to avoid re-triggering the source and looping.
+ocForm.addSelectedItem = function(id, triggerDynamic = true) {
   const searchInput = ocForm.getSearchInput(id);
   const selectedItems = ocForm.getSelectedItems(id);
   const validSuggestions = ocForm.getValidSuggestions(id);
@@ -266,8 +269,11 @@ ocForm.addSelectedItem = function(id) {
     ocForm.checkSubmitState(id);
     searchInput.value = '';
     ocForm.updateAddButtonState(id);
+    // updateArea() also runs execDynamicWidget(); when neither flag is set we run
+    // it directly so this multi_select can act as a Dynamic Form Widget source.
     if (scriptOverwriteFlag) ocForm.updateArea('script', id);
     if (submitOverwriteFlag) ocForm.updateArea('submit', id);
+    if (triggerDynamic && !scriptOverwriteFlag && !submitOverwriteFlag) ocForm.execDynamicWidget(id);
   };
 
   if (selectedText.trim() !== "") {
@@ -447,6 +453,18 @@ ocForm.isElementChecked = function(id) {
   }
   else if (element.tagName === "INPUT") {
     return element.checked;
+  }
+  else if (element.tagName === "LI") {
+    // multi_select option: "checked" means a selected badge with this label exists.
+    const key = element.dataset.key;
+    const input = document.getElementById(key);
+    if (input && input.disabled) return false;
+    if (ocForm.multiSelectDisabledIndexes[element.textContent] !== undefined) return false;
+
+    const selectedItems = ocForm.getSelectedItems(key);
+    if (!selectedItems) return false;
+    return Array.from(selectedItems.getElementsByTagName('a'))
+             .some(a => a.textContent === element.textContent);
   }
   else {
     console.error("Unknown Tag");
@@ -1137,8 +1155,15 @@ ocForm.setValue = function(key, num, widget, attr, value, fromId) {
       break;
     case 'multi_select':
       if (key !== fromId) {
-        ocForm.getSearchInput(key).value = value;
-        ocForm.addSelectedItem(key);
+        // Skip if the badge already exists: execDynamicWidget() may run multiple
+        // times, and unlike select/radio/checkbox, addSelectedItem() is not idempotent.
+        const exists = Array.from(ocForm.getSelectedItems(key).getElementsByTagName('a'))
+          .some(a => a.textContent === value);
+        if (!exists) {
+          ocForm.getSearchInput(key).value = value;
+          // false: this is a cascaded set-value, so do not re-run the Dynamic Form Widget.
+          ocForm.addSelectedItem(key, false);
+        }
       }
       break;
     case 'radio':

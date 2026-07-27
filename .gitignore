@@ -6,3 +6,8 @@ Gemfile
 Gemfile.lock
 vendor/
 .bundle
+TODO_ja.md
+conf.yml.erb
+
+# Regenerated from docs by misc/tests/run_tests.rb
+misc/tests/samples/

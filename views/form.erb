@@ -384,8 +384,10 @@ window.onload = function() {
   let scriptValues = [];
   let submitValues = [];
 
-  ocForm.execDynamicWidget();
+  // onceExec() must run first: it creates the multi_select badges, which
+  // execDynamicWidget() reads when a multi_select is a Dynamic Form Widget source.
   ocForm.onceExec();
+  ocForm.execDynamicWidget();
   ocForm.updateScriptContents(scriptValues);
   ocForm.updateSubmitContents(submitValues);
   ocForm.scriptArea.value = ocForm.isScriptCache() ? ocForm.loadScriptCache() : Object.values(scriptValues).join('\n');

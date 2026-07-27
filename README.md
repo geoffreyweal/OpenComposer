@@ -8,7 +8,7 @@ interface for creating, previewing, editing, and submitting batch job scripts. I
 supports multiple job schedulers and can be configured for different HPC applications.
 
 - **App type:** Workflow Composer (Jobs category)
-- **Latest release:** [`v2.0.1`](https://github.com/RIKEN-RCCS/OpenComposer/releases/tag/v2.0.1) (see [Changelog](https://github.com/RIKEN-RCCS/OpenComposer/blob/main/CHANGELOG.md))
+- **Latest release:** [`v2.0.2`](https://github.com/RIKEN-RCCS/OpenComposer/releases/tag/v2.0.2) (see [Changelog](https://github.com/RIKEN-RCCS/OpenComposer/blob/main/CHANGELOG.md))
 - **License:** MIT (see [LICENSE file](https://github.com/RIKEN-RCCS/OpenComposer/blob/main/LICENSE))
 - **Requirements:** Open OnDemand 3.0 or later.
 - **Supported job schedulers:** Slurm, PBS Pro, Grid Engine, Fujitsu TCS
@@ -73,11 +73,11 @@ You need to edit `conf.yml.erb`. For details, see [Section 2. "Setting" in insta
 
 ## Testing
 
-| System      | Site        | Scheduler          | Repository |
-|-------------|-------------|--------------------|------------|
+| System      | Site        | Scheduler          | Repository                                        |
+|-------------|-------------|--------------------|---------------------------------------------------|
 | Fugaku      | RIKEN RCCS  | Fujitsu TCS, Slurm | https://github.com/RIKEN-RCCS/composer_fugaku     |
 | R-CCS Cloud | RIKEN RCCS  | Slurm              | https://github.com/RIKEN-RCCS/composer_rccs_cloud |
-
+| RIKYU       | RIKEN RCCS  | Slurm              | https://github.com/RIKEN-RCCS/composer_rikyu      |
 
 ## Contributing
 

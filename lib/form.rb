@@ -377,18 +377,20 @@ helpers do
     required = value['required'].to_s == "true" ? "true" : "false"
     html  = output_label_with_span_tag(key, value)
     html += "<ul id='#{valid_suggestions_id}' style='display: none;'>\n"
-    value['options'].each do |i|
+    value['options'].each_with_index do |i, idx|
       data_value = i[1].nil? ? i[0] : i[1]
       escaped_data = escape_html(data_value)
       escaped_item = escape_html(i[0])
-      html += "<li data-value='#{escaped_data}'>#{escaped_item}</li>\n"
+      # id and data-key let ocForm.isElementChecked() treat each option as a
+      # Dynamic Form Widget source (checked = a badge with this label is selected).
+      html += "<li id='#{key}_#{idx+1}' data-key='#{key}' data-value='#{escaped_data}'>#{escaped_item}</li>\n"
     end
     html += "</ul>\n"
 
     html += "<div class=\"input-group\">\n"
     html += "<input type=\"text\" autocomplete=\"off\" spellcheck=\"false\" tabindex=\"#{@table_index}\" class=\"form-control\" id=\"#{key}\" data-widget=\"multi_select\" oninput=\"ocForm.showSuggestions('#{key}')\" onfocus=\"ocForm.showSuggestions('#{key}', true)\" onblur=\"ocForm.hideSuggestions('#{key}')\" data-required=\"#{required}\" "
-    script_flag = references_key_or_has_flag?(key, nil, script_content, app_name, dir_name)
-    submit_flag = references_key_or_has_flag?(key, nil, submit_content, app_name, dir_name)
+    script_flag = references_key_or_has_flag?(key, value['options'], script_content, app_name, dir_name)
+    submit_flag = references_key_or_has_flag?(key, value['options'], submit_content, app_name, dir_name)
     html += "data-script-flag=#{script_flag} data-submit-flag=#{submit_flag} "
     style = if script_flag
               ""
@@ -423,7 +425,9 @@ helpers do
     values.each do |v|
       js += "  textarea.innerHTML = '#{escape_html(v)}';\n"
       js += "  ocForm.getSearchInput('#{key}').value = textarea.value;\n"
-      js += "  ocForm.addSelectedItem('#{key}');\n"
+      # Pass false so prepopulation does not run the Dynamic Form Widget here;
+      # window.onload triggers execDynamicWidget() once after onceExec().
+      js += "  ocForm.addSelectedItem('#{key}', false);\n"
     end
     js += "  }\n"
 
@@ -1005,6 +1009,8 @@ HTML
         @js["exec_dw"] += output_exec_dw_js(key, value["options"], obj)
         html += output_select_html(key, value, script_content, submit_content, app_name, dir_name)
       when 'multi_select'
+        @js["init_dw"] += output_init_dw_js(value["options"], obj)
+        @js["exec_dw"] += output_exec_dw_js(key, value["options"], obj)
         @js["once"] += output_multi_select_js(key, value, script_content, submit_content, app_name, dir_name)
         html += output_multi_select_html(key, value, script_content, submit_content, app_name, dir_name)
       when 'radio'
@@ -1063,6 +1069,8 @@ HTML
         @js["exec_dw"] += output_exec_dw_js(key, value["options"], obj)
         html += output_select_html(key, value, script_content, submit_content, app_name, dir_name)
       when 'multi_select'
+        @js["init_dw"] += output_init_dw_js(value["options"], obj)
+        @js["exec_dw"] += output_exec_dw_js(key, value["options"], obj)
         @js["once"] += output_multi_select_js(key, value, script_content, submit_content, app_name, dir_name)
         html += output_multi_select_html(key, value, script_content, submit_content, app_name, dir_name)
       when 'radio'
